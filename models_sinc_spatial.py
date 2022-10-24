@@ -81,7 +81,8 @@ class sinc_conv(nn.Module):
         min_freq = 1.0
         min_band = 2.0;
         filt_beg_freq = torch.abs(self.filt_b1) +  min_freq / self.freq_scale
-        filt_end_freq = torch.clamp(filt_beg_freq + (torch.abs(self.filt_band) + min_band / self.freq_scale), 3/self.freq_scale, (self.cutoff)/self.freq_scale)
+        filt_end_freq = torch.clamp(filt_beg_freq + (torch.abs(self.filt_band) + min_band / self.freq_scale), \
+                                    int(min_freq+min_band)/self.freq_scale, (self.cutoff)/self.freq_scale)
         n = torch.linspace(0, N, steps=N)
 
         # Filter window (hamming)

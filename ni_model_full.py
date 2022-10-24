@@ -81,6 +81,8 @@ correctModel = False  # whether the signed rt is coded as correct and incorrect
 choiceModel = True   # whether target is choice 1 and choice 2
 notrainMode = True     # if true, just load the model
                         # if false, train model
+
+saveForwardHook = False
 if notrainMode:
     keepTrainMode = False
     createConfig = False
@@ -88,7 +90,6 @@ else:
     createConfig = True    # when training, create config files.
     keepTrainMode = False  # set this to be True if wants to keep training from previous model
     zScoreData = False
-
 
 
 datapath = '/home/jenny/sincnet_eeg/ni_data/exp5data/'
@@ -115,7 +116,7 @@ model = torch.nn.DataParallel(model, device_ids = [1])
 ######################## creating directory and file nmae ############for s########
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_ni_2param_onebound_classify_full_cfg' # clamp at forward
-postname = '_ni_2param_onebound_classify_full'
+postname = '_ni_2param_onebound_classify_full_reg'
 # postname = '_ni_2param_onebound_choice_model0'
 # postname = '_ni_2param_onebound_choice_model0'
 
@@ -469,7 +470,7 @@ mylist = np.arange(0, len(finalsubIDs))
 ############################################
 ############### set subject ######################
 ############################################
-for s in range(1,2):
+for s in range(0,4):
     # a results dictionary for storing all the data
     finalsubIDs = getIDs(datapath)
     # for i in range(0,1):
@@ -654,7 +655,7 @@ for s in range(1,2):
                 # loss = my_loss(torch.abs(target.cuda()), outputs.cuda(), ndt,outputs_alpha.cuda()) -correlation_loss(outputs.cuda(),torch.abs(target.cuda()))
                 loss = my_loss(target_.cuda(), outputs.cuda(), ndt, outputs_alpha.cuda()) - correlation_loss(
                     outputs.cuda(), (target_.cuda())) +  1*criterion(torch.squeeze(choice), torch.squeeze(choice_target))\
-                              + 0.5*outputs_alpha.cuda().sum()
+                              + 1*outputs_alpha.cuda().sum()
 
                 # Backward and optimize
                 optimizer_drift.zero_grad()
@@ -738,6 +739,10 @@ for s in range(1,2):
         choice_targetlist_test.extend(choice_test_target.tolist())
         #     # test_data, test_target = next(iter(test_loader))
         with torch.no_grad():
+            clipper = weightConstraint(model=model)
+            model.module.sinc_cnn2d_drift.apply(clipper)
+            model.module.sinc_cnn2d_choice.apply(clipper)
+            model.module.sinc_cnn2d_bound.apply(clipper)
             pred, pred_1,choice_test= model(test_data.cuda())
         choice_predict_test.extend(np.squeeze((choice_test).detach().cpu().round().numpy()).tolist())
         pred_1_copy = pred_1.detach().cpu()
@@ -819,6 +824,10 @@ for s in range(1,2):
         # device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
         # Forward pass
         with torch.no_grad():
+            clipper = weightConstraint(model=model)
+            model.module.sinc_cnn2d_drift.apply(clipper)
+            model.module.sinc_cnn2d_choice.apply(clipper)
+            model.module.sinc_cnn2d_bound.apply(clipper)
             outputs, outputs_1,choice_train = model(data.cuda())
         choice_predict_train.extend(np.squeeze(choice_train.detach().cpu().round().numpy()).tolist())
 
@@ -1061,180 +1070,128 @@ for s in range(1,2):
     fig2.savefig(figurepath + '/' + finalsubIDs[s] + '_condition' + '.png')
 
 #%%
-#
-# def LikelihoodRatio(l1,l2):
-#     '''sum of negative log likelihood L (parameters | data)'''
-#     if np.sign(l1) == np.sign(l2):
-#         LR = l1/l2
-#         if LR < 1:
-#
-#     return LR,
+
 # calculate likelihood
     from my_wfpt import *
+    # compare the difference between log lkelihood
     #  L (delta_tr, alpha_tr | RT_tr, ndt)
-    L_train = wfpt_vec(np.abs(train_target), -np.array(drift_train), ndt.numpy(), np.array(alpha_train))
+    L_train = -wfpt_vec(np.abs(train_target), -np.array(drift_train), ndt.numpy(), np.array(alpha_train))
     L_check = my_loss(torch.tensor(np.abs(train_target)).reshape(-1,1).cuda(), -torch.tensor(drift_train).reshape(-1,1).cuda(), \
                       ndt.cuda(), torch.tensor(alpha_train).reshape(-1,1).cuda()).cpu().numpy()
 
     #  train mean on tran rt
     train_drift_mean = np.zeros_like(train_target) + np.median(drift_train)
     train_boundary_mean = np.zeros_like(train_target) + np.median(alpha_train)
-    L_tr_mean_on_tr = wfpt_vec(np.abs(train_target), -1* train_drift_mean, ndt.numpy(), np.array(train_boundary_mean))
+    L_tr_mean_on_tr = -wfpt_vec(np.abs(train_target), -1* train_drift_mean, ndt.numpy(), np.array(train_boundary_mean))
 
 
     #  train mean on test rt
     train_drift_mean = np.zeros_like(target_test) + np.median(drift_train)
     train_boundary_mean = np.zeros_like(target_test) + np.median(drift_train)
-    L_tr_on_ts = wfpt_vec(np.abs(target_test), -1* train_drift_mean, ndt.numpy(), np.array(train_boundary_mean))
+    L_tr_on_ts = -wfpt_vec(np.abs(target_test), -1* train_drift_mean, ndt.numpy(), np.array(train_boundary_mean))
 
     # test on test rt
-    L_ts_on_ts = wfpt_vec(np.abs(target_test), -1* drift_test, ndt.numpy(), np.array(alpha_test))
+    L_ts_on_ts = -wfpt_vec(np.abs(target_test), -1* drift_test, ndt.numpy(), np.array(alpha_test))
 
     print('L(train_on_trainRT): ', L_train, L_check)  # check if they are the same
     print('L(train_median_on_trainRT): ', L_tr_mean_on_tr)  # check if they are the same
     print('L(train_median_testRT): ', L_tr_on_ts)  # check if they are the same
     print('L(test_on_testRT): ', L_ts_on_ts)  # check if they are the same
 
-    LRT_train = L_tr_mean_on_tr/ L_train
+    LRT_train = L_train - L_tr_mean_on_tr
     print('Ltrain:', LRT_train)
-    if LRT_train > 1:
+    if LRT_train > 0:
         print('L_train_on_trainRT is a better model!!!')
     else:
         print('L_train_median_on_trainRT is better.')
 
-    LRT_test = L_tr_on_ts / L_ts_on_ts
+    LRT_test = L_ts_on_ts - L_tr_on_ts
     print('Ltest:', LRT_test)
-    if LRT_test > 1:
+    if LRT_test > 0:
         print('L_test_on_testRT is a better model!!!')
     else:
         print('L_train_median_on_testRT is better.')
+
+    # write it
+    likelihood_table = ConfigParser()
+    likelihood_table["likelihood"] = {
+        "LL_train": L_train,
+        "LL_tr_mean_on_tr":L_tr_mean_on_tr,
+        "LL_ts_on_ts": L_ts_on_ts,
+        "LL_tr_on_ts": L_tr_on_ts
+    }
+    likelihood_table["RatioTest"] = {
+        "LRT_train": LRT_train,
+        "LRT_test":LRT_test,
+    }
+    likelihood_table["Note"] = {
+        "note": 'This result is not negative log likelihood. For simplicity, it is the LOG likelihood. So, Likelihood'
+                'ratio is now LL1 - LL1 (same as L1/L2)',
+    }
+    subresultpath = resultpath + '/' + finalsubIDs[s]
+
     #%%
     #############3  DDM parameters #####################
     p = model.state_dict()
-
-
-    # visualize the bands
-    p_low = p['module.sinc_cnn2d_drift.filt_b1']
-    p_band = p['module.sinc_cnn2d_drift.filt_band']
-
-    filt_beg_freq = (torch.abs(p_low) + 1 / 500)
-    filt_end_freq = torch.clamp(filt_beg_freq + torch.abs(p_band) + 2 / 500, 3/500, 50/500)
-
-    filt_beg_freq = filt_beg_freq.cpu().numpy() * 500
-    filt_end_freq = filt_end_freq.cpu().numpy() * 500
+    p0 = model_0.state_dict()
     goodchan = chansets_new()
 
-    #
-    # results[finalsubIDs[s]] = dict()
-    # results[finalsubIDs[s]] = {'filt_beg_freq': filt_beg_freq, 'filt_end_freq': filt_end_freq,
-    #                             # 'corr': corr1, 'corr_rho': corr_rho1, 'filter_grads': G, 'temporal_grads': Gt,
-    #                             'chan_weights': torch.squeeze(p['module.separable_conv.depthwise.weight']).cpu()}
-    #
-    # sub_dict= dict()
-    # sub_dict = {'filt_beg_freq': filt_beg_freq, 'filt_end_freq': filt_end_freq,
-    #
-    #                             'chan_weights': torch.squeeze(p['module.separable_conv.depthwise.weight']).cpu().numpy(),
-    #             'target_rt_test': targetlist, 'delta_test': predictedlist, 'alpha_test': predictedlist_alpha,
-    #             'target_rt_train': np.array(train_target),  'delta_train': np.array(out) , 'alpha_train':np.array(out_alpha)
-    #             }
-    # savemat(resultpath + '/%s' % finalsubIDs[s][0:-1]+ '_results' + postname + '.mat', sub_dict)
-    # my_file = open(resultpath + f'/%s' % finalsubIDs[s][0:-1]+ '_results' + postname +'.pkl', 'wb')
-    # pickle.dump(sub_dict, my_file)
-    # my_file.close()
+    from get_filt import *
+    from sinc_fft import *
 
+    ######### forward hook for all modules
 
-    # plt.show()
-    # filter analysis
+    if saveForwardHook:
+        isExist = os.path.exists(subresultpath)
+        if not isExist:
+            os.makedirs(subresultpath)
+            print(subresultpath + ' created')
 
+            # Write the above sections to config.ini file
+            with open(subresultpath + '/likelihood.ini', 'w') as ll:
+                likelihood_table.write(ll)
+        from save_forward_hook import *
+        def get_features(name):
+            def hook(model, input, output):
+                features[name] = output.detach()
+            return hook
+        for name, module in model.module.named_modules():
+            if name:
+                module.register_forward_hook(get_features(name))
+        ## save test features ##
+        FEAT = {}
+        TARGET = []
+        features = {}
 
-    #
-    # # let's look at the the attnetion mechanism
-    # att_train0 = np.empty((0,32,98,370))
-    # for i in y_att_train_list:
-    #     att_train0 = np.vstack((att_train0, np.array(torch.squeeze(i[0].cpu().detach()))))
-    #
-    # weights_train = np.mean(att_train0,axis=0)
+        for idx, (inputs, target) in enumerate(test_loader):
+            inputs = inputs.to(device)
+            TARGET.extend(target.numpy())
+            drift, bound, choice = model(inputs)
+            for key in features:
+                if idx == 0:
+                    FEAT[key] = []
+                FEAT[key].extend(features[key].cpu().numpy())
+            print(idx)
+        saveForwardHookTest(FEAT, TARGET, subresultpath)
 
-
-    # get the attention weights
-    # split correct incorrect
-    rt_acc = (correct * 2 - 1) * np.abs(rt)
-    correct = correct.astype('int')
-    _, _, _, y_testacc = train_test_split(newdata, rt_acc, test_size=0.2, random_state=42)
-
-    attentionTr = np.empty((0,32))
-    for i in y_att_train_list:
-        attentionTr = np.vstack((attentionTr, np.array(torch.squeeze(i[1].cpu().detach()))))
-
-    attentionTr_mean =  np.mean(attentionTr,axis=0)
-
-
-    attentionTs = np.empty((0,32))
-    for i in y_att_test_list:
-        attentionTs = np.vstack((attentionTs, np.array(torch.squeeze(i[1].cpu().detach()))))
-
-    attentionTs_mean =  np.mean(attentionTs,axis=0)
-    attentionTs_mean_corr =  np.mean(attentionTs[y_testacc>0,:],axis=0)
-    attentionTs_mean_incorr =  np.mean(attentionTs[y_testacc<0,:],axis=0)
-
-    # choice
-    attentionTr_choice = np.empty((0, 32))
-    for i in y_att_train_list_choice:
-        attentionTr_choice = np.vstack((attentionTr_choice, np.array(torch.squeeze(i[1].cpu().detach()))))
-
-    attentionTr_mean_choice = np.mean(attentionTr_choice, axis=0)
-
-    attentionTs_choice = np.empty((0, 32))
-    for i in y_att_test_list_choice:
-        attentionTs_choice = np.vstack((attentionTs_choice, np.array(torch.squeeze(i[1].cpu().detach()))))
-
-    attentionTs_mean_choice= np.mean(attentionTs_choice, axis=0)
+        ## save train features ##
+        FEAT = {}
+        TARGET = []
+        features = {}
+        for idx, (inputs, target) in enumerate(train_loader):
+            inputs = inputs.to(device)
+            TARGET.extend(target.numpy())
+            drift, bound, choice = model(inputs)
+            for key in features:
+                if idx == 0:
+                    FEAT[key] = []
+                FEAT[key].extend(features[key].cpu().numpy())
+            print(idx)
+        saveForwardHookTrain(FEAT, TARGET, subresultpath)
 
 
 
-    attentionTs_mean_corr_choice = np.mean(attentionTs_choice[y_testacc > 0, :], axis=0)
-    attentionTs_mean_incorr_choice = np.mean(attentionTs_choice[y_testacc < 0, :], axis=0)
-
-    # # # let's pick the 10 most important weights to visualize
-    # numFreq = 4
-    # depth = int(model.separable_conv.depthwise.out_channels / model.separable_conv.depthwise.in_channels)
-    # fig2,ax2 = plt.subplots(numFreq,depth+1,figsize= (10,12))
-    # for i in range(numFreq):
-    #     weight_ind = np.argsort(attentionTs_mean)[-(i+1)]
-    #     bands = filt_beg_freq[weight_ind],filt_end_freq[weight_ind]
-    #     sum_weights = []
-    #     for d in range(depth):
-    #         plottopomap(sub_dict['chan_weights'][weight_ind*depth+d],ax2[i][d])
-    #         sum_weights.append(sub_dict['chan_weights'][weight_ind*depth+d])
-    #         ax2[i][d].set_xlabel('%.0fHz'% bands[0] + '-%.0fHz'% bands[1])
-    #     plottopomap(np.mean(np.array(sum_weights), axis=0), ax2[i][depth])
-    #     ax2[i][depth].set_xlabel('Sum ')
-    #
-    # fig2.suptitle('Weights of Important Frequency bands')
-    # fig2.tight_layout()
-    #
-    # fig2.savefig('figures_final/' +  finalsubIDs[s] + 'spatial_kernel_ts' +'.png')
-    # fig2.show()
-    # #
-    # # #
-
-    # #
-    # weights_ = np.repeat(attentionTs_mean, depth)
-    # weighted_channels = weights_ @ sub_dict['chan_weights']
-    # fig4,ax4 = plt.subplots(1)
-    # plottopomap(weighted_channels,ax4)
-    # fig4.suptitle('Weighted Sum of all Frequency Bands')
-    # fig4.savefig('figures_final/' +  finalsubIDs[s] + 'spatial_kernel_allFreq_ts' +'.png')
-    #
-    # fig4.show()
-    # #
-    #
-    #
-    #%%
-    #############################################################
-    ##       visulize band pass fitlers    ###########
-    #########################################################
-
+    ################# visualize filters ###############################
 
     def norm(vec):
         f_min, f_max = np.min(vec), np.max(vec)
@@ -1244,395 +1201,124 @@ for s in range(1,2):
         f_min, f_max = np.min(vec), np.max(vec)
         newV =  (vec - f_min) / (f_max - f_min)
         return newV
-    fig5, ax5_ = plt.subplots(1, figsize = (5,5.5))
-    ax5_.axis('off')
-    ax5 = fig5.add_axes([0.2, 0.12, 0.7, 0.68])
-    p = model_0.state_dict()
-    p_low = p['module.sinc_cnn2d.filt_b1']
-    p_band = p['module.sinc_cnn2d.filt_band']
-    #
-    filt_beg_freq0 = (torch.abs(p_low) + 1 / 500)
-    filt_end_freq0 = torch.clamp(filt_beg_freq0 + torch.abs(p_band) + 2 / 500, 3/500, 50/500)
 
-    filt_beg_freq0 = filt_beg_freq0.cpu().numpy() * 500
-    filt_end_freq0 = filt_end_freq0.cpu().numpy() * 500
+    def plotFilterRank(filt_beg_freq0,filt_end_freq0, filt_beg_freq, filt_end_freq, attentionTs_mean, color,branchName):
+        fig5, ax5_ = plt.subplots(1, figsize=(5, 5.5))
+        ax5_.axis('off')
+        ax5 = fig5.add_axes([0.2, 0.12, 0.7, 0.68])
 
-    p = model.state_dict()
-    p_low = p['module.sinc_cnn2d.filt_b1']
-    p_band = p['module.sinc_cnn2d.filt_band']
-    #
-    filt_beg_freq = (torch.abs(p_low) + 1 / 500)
-    filt_end_freq = torch.clamp(filt_beg_freq + torch.abs(p_band) + 2 / 500, 3/500, 50/500)
+        alpha = 1
+        ms = 5
+        for i in range(0, 32):
+            w = np.argsort(attentionTs_mean)[-(i + 1)]
+            lines0, = ax5.plot([filt_beg_freq0[w], filt_end_freq0[w]], [31 - i] * 2, ls='dashed', color='Blue')
+            print(filt_beg_freq[w], filt_end_freq[w])
+            lines1, = ax5.plot([filt_beg_freq[w], filt_end_freq[w]], [31 - i] * 2, linewidth=ms, color=color,
+                               alpha=alpha)
+            alpha -= 0.02
+            ms -= 0.1
+            print(31 - i)
 
-    filt_beg_freq = filt_beg_freq.cpu().numpy() * 500
-    filt_end_freq = filt_end_freq.cpu().numpy() * 500
-    alpha=1
-    ms=5
-    for i in range(0, 32):
-        w = np.argsort(attentionTs_mean)[-(i+1)]
-        lines0, = ax5.plot([filt_beg_freq0[w], filt_end_freq0[w]], [31-i] * 2, ls='dashed', color='Blue')
-        print(filt_beg_freq[w], filt_end_freq[w])
-        lines1, = ax5.plot([filt_beg_freq[w], filt_end_freq[w]], [31-i] * 2, linewidth=ms, color='tab:orange',alpha=alpha)
-        alpha -= 0.02
-        ms -= 0.1
-        print(31-i)
-
-
-    ax5.set(yticklabels=[])
-    ax5.set(yticks=[])
-    ax5.xaxis.set_ticks(np.arange(0, 41,10))
-    props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-    # Create a Rectangle patch
-    # rect = patches.Rectangle((0.2, 0.72), 0.7, 0.10, linewidth=2, edgecolor='black', facecolor='wheat',alpha=0.4)
-    # Add the patch to the Axes
-    # p = ax5_.add_patch(rect)
-    lines0.set_label('Initialized Filters')
-    lines1.set_label('Learned Filters')
-
-    # p.set_label('4 Most Important Filters')
-
-    # ax5_.text(0.8, 0.8, 'Most \nImportant', horizontalalignment='center',
-    #      verticalalignment='center', transform=ax5_.transAxes)
-
-    # ax5_.text(1, 0.15, 'Least \nImportant', horizontalalignment='center',
-    #
-    #      verticalalignment='center', transform=ax5_.transAxes, bbox=props)
-    ax5_.annotate('', xy=(0.12, 0.2), xycoords='axes fraction', xytext=(0.12,0.8),
-    arrowprops=dict(arrowstyle="simple", color='black'))
-    ax5_.set_zorder(1)
-    fig5.legend(bbox_to_anchor=(0.8, 1.0), fontsize='small', handlelength=2)
-    ax5.set_xlabel('Frequency (Hz) ')
-    ax5.set_ylabel('Filters Ranked by Importance\n')
-    # fig5.suptitle('Ranked Filters for Drift and Boundary Prediction')
-    fig5.tight_layout()
-    fig5.show()
-
-    fig5.savefig(figurepath +   '/'+ finalsubIDs[s] + 'filters_rank_ts' +'.png')
-
-    ##################################3
-    ## visulize band pass fitlers by correct and incorrect
-    #############################
-    # %%
+        ax5.set(yticklabels=[])
+        ax5.set(yticks=[])
+        ax5.xaxis.set_ticks(np.arange(0, 41, 10))
+        props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+        # Create a Rectangle patch
+        # rect = patches.Rectangle((0.2, 0.72), 0.7, 0.10, linewidth=2, edgecolor='black', facecolor='wheat',alpha=0.4)
+        # Add the patch to the Axes
+        # p = ax5_.add_patch(rect)
+        lines0.set_label('Initialized Filters')
+        lines1.set_label('Learned Filters')
+        fig5.show()
+        fig5.savefig(figurepath + '/'+ finalsubIDs[s] + 'filters_rank_ts_'+branchName +'.png')
+        return
 
 
-    #################################3
-    ## visualize classfication filters ##3
-    ######################################
+    # get the filters learned from model
+    _, _, filt_begin_drift0, filt_end_drift0 = getFilt(p0, 'drift', sr)
+    _, _, filt_begin_bound0, filt_end_bound0= getFilt(p0, 'bound', sr)
+    _, _, filt_begin_choice0, filt_end_choice0= getFilt(p0, 'choice', sr)
+
+    _, _, filt_begin_drift, filt_end_drift = getFilt(p, 'drift', sr)
+    _, _, filt_begin_bound, filt_end_bound = getFilt(p, 'bound', sr)
+    _, _, filt_begin_choice, filt_end_choice= getFilt(p, 'choice', sr)
 
 
+    # get the attention weights
+    keys = np.load(subresultpath + '/' + 'feature_test_keys.npy')
+    attentionTs_drift = np.load(subresultpath + '/' + 'feature_test_mlp0_drift.npy')
+    attentionTs_drift_mean =  np.mean(attentionTs_drift,axis=0)
 
-    fig5_choice, ax5_choice_ = plt.subplots(1, figsize=(5, 5.5))
-    ax5_choice_.axis('off')
-    ax5_choice = fig5_choice.add_axes([0.2, 0.12, 0.7, 0.68])
-    p = model_0.state_dict()
-    p_low_choice = p['module.sinc_cnn2d_choice.filt_b1']
-    p_band_choice = p['module.sinc_cnn2d_choice.filt_band']
-    #
-    filt_beg_freq0_choice = (torch.abs(p_low_choice) + 1 / 500)
-    filt_end_freq0_choice = torch.clamp(filt_beg_freq0_choice + torch.abs(p_band_choice) + 2 / 500, 3/500, 50/500)
+    attentionTs_bound = np.load(subresultpath + '/' + 'feature_test_mlp0_bound.npy')
+    attentionTs_bound_mean =  np.mean(attentionTs_bound,axis=0)
 
-    filt_beg_freq0_choice = filt_beg_freq0_choice.cpu().numpy() * 500
-    filt_end_freq0_choice = filt_end_freq0_choice.cpu().numpy() * 500
+    attentionTs_choice = np.load(subresultpath + '/' + 'feature_test_mlp0_choice.npy')
+    attentionTs_choice_mean =  np.mean(attentionTs_choice,axis=0)
 
-    p = model.state_dict()
-    p_low_choice = p['module.sinc_cnn2d_choice.filt_b1']
-    p_band_choice = p['module.sinc_cnn2d_choice.filt_band']
-    #
-    filt_beg_freq_choice = (torch.abs(p_low_choice) + 1 / 500)
-    filt_end_freq_choice = torch.clamp(filt_beg_freq_choice + torch.abs(p_band_choice) + 2 / 500, 3/500, 50/500)
+    # visualize
+    driftcolor = 'tab:green'
+    boundcolor = 'tab:red'
+    choicecolor = 'tab:blue'
+    myfilters_drift = makeSincFilters(filt_begin_drift, filt_end_drift)
+    myfilters_bound = makeSincFilters(filt_begin_bound, filt_end_bound)
+    myfilters_choice = makeSincFilters(filt_begin_choice, filt_end_choice)
 
-    filt_beg_freq_choice = filt_beg_freq_choice.cpu().numpy() * 500
-    filt_end_freq_choice = filt_end_freq_choice.cpu().numpy() * 500
-    alpha = 1
-    ms = 5
-    for i in range(0, 32):
-        w = np.argsort(attentionTs_mean_choice)[-(i + 1)]
-        lines0, = ax5_choice.plot([filt_beg_freq0[w], filt_end_freq0[w]], [31 - i] * 2, ls='dashed', color='Blue')
-        print(filt_beg_freq_choice[w], filt_end_freq_choice[w])
-        lines1, = ax5_choice.plot([filt_beg_freq_choice[w], filt_end_freq_choice[w]], [31 - i] * 2, linewidth=ms, color='tab:green', alpha=alpha)
-        alpha -= 0.02
-        ms -= 0.1
-        print(31 - i)
+    freq, P1  = plotFFT(myfilters_drift.T @ attentionTs_drift_mean)
+    freq, P2  = plotFFT(myfilters_bound.T @ attentionTs_bound_mean)
+    freq, P3  = plotFFT(myfilters_choice.T @ attentionTs_choice_mean)
 
-    ax5_choice.set(yticklabels=[])
-    ax5_choice.set(yticks=[])
-    ax5_choice.xaxis.set_ticks(np.arange(0, 41, 10))
-    props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-    # Create a Rectangle patch
-    # Add the patch to the Axes
-    lines0.set_label('Initialized Filters')
-    lines1.set_label('Learned Filters')
+    fig10, ax = plt.subplots(figsize = (8,8))
+    ax.plot(freq, P1, label = 'Drift', linewidth = 6,color = driftcolor)
+    ax.plot(freq, P2,  label ='Boundary', linewidth = 6,color = boundcolor)
+    ax.plot(freq, P3,  label ='Choice',linewidth = 6, color = choicecolor)
+    ax.set_xlim(0,50)
+    ax.set_ylim(0,np.max((P1,P2,P3)) + 0.2)
+    ax.set_xlabel('Frequency (Hz)')
+    ax.set_ylabel('Amplitude')
+    fig10.subplots_adjust(right = 0.8)
+    ax.legend(bbox_to_anchor=[1.3, 1])
+    fig10.savefig(figurepath + '/' + finalsubIDs[s] + 'filters_weighted_rs' + '.png')
+
+    plotFilterRank(filt_begin_drift0, filt_end_drift0, filt_begin_drift, filt_end_drift, attentionTs_drift_mean,color=driftcolor,branchName = 'drift')
+    plotFilterRank(filt_begin_bound0, filt_end_bound0, filt_begin_bound, filt_end_bound, attentionTs_bound_mean,color = boundcolor,branchName = 'bound')
+    plotFilterRank(filt_begin_choice0, filt_end_choice0, filt_begin_choice, filt_end_choice, attentionTs_choice_mean,color = choicecolor,branchName = 'choice')
 
 
-    # ax5_.text(0.8, 0.8, 'Most \nImportant', horizontalalignment='center',
-    #      verticalalignment='center', transform=ax5_.transAxes)
-
-    # ax5_.text(1, 0.15, 'Least \nImportant', horizontalalignment='center',
-    #
-    #      verticalalignment='center', transform=ax5_.transAxes, bbox=props)
-
-
-    ax5_choice_.annotate('', xy=(0.12, 0.2), xycoords='axes fraction', xytext=(0.12, 0.8),
-                  arrowprops=dict(arrowstyle="simple", color='black'))
-    ax5_choice_.set_zorder(1)
-    fig5_choice.legend(bbox_to_anchor=(0.68, 1.0), fontsize='small', handlelength=2)
-    ax5_choice.set_xlabel('Frequency (Hz) ')
-    ax5_choice.set_ylabel('Filters Ranked by Importance\n')
-    fig5_choice.tight_layout()
-    fig5_choice.show()
-
-    fig5_choice.savefig(figurepath  + '/'+  finalsubIDs[s] + 'filters_rank_ts_choice' + '.png')
-
-    ##################################3
-    ## visulize band pass fitlers
-    #############################
-
-    import matplotlib.ticker as ticker
-    import matplotlib.patches as patches
-
-
-    def norm(vec):
-        f_min, f_max = np.min(vec), np.max(vec)
-        newV = 2 * (vec - f_min) / (f_max - f_min) - 1
-        return newV
-
-
-    # fig5, ax5_ = plt.subplots(1, figsize=(5, 5.5))
-    # ax5_.axis('off')
-    # ax5 = fig5.add_axes([0.2, 0.12, 0.7, 0.68])
-    # p = model_0.state_dict()
-    # p_low = p['sinc_cnn2d.filt_b1']
-    # p_band = p['sinc_cnn2d.filt_band']
-    # #
-    # filt_beg_freq0 = (torch.abs(p_low) + 1 / 500)
-    # filt_end_freq0 = (filt_beg_freq0 + torch.abs(p_band) + 2 / 500)
-    #
-    # filt_beg_freq0 = filt_beg_freq0.cpu().numpy() * 500
-    # filt_end_freq0 = filt_end_freq0.cpu().numpy() * 500
-    #
-    # p = model.state_dict()
-    # p_low = p['sinc_cnn2d.filt_b1']
-    # p_band = p['sinc_cnn2d.filt_band']
-    # #
-    # filt_beg_freq = (torch.abs(p_low) + 1 / 500)
-    # filt_end_freq = (filt_beg_freq + torch.abs(p_band) + 2 / 500)
-    #
-    # filt_beg_freq = filt_beg_freq.cpu().numpy() * 500
-    # filt_end_freq = filt_end_freq.cpu().numpy() * 500
-    # alpha = 1
-    # ms = 5
-    # for i in range(0, 32):
-    #     w = np.argsort(attentionTs_mean_corr)[-(i + 1)]
-    #     lines0, = ax5.plot([filt_beg_freq0[w], filt_end_freq0[w]], [31 - i] * 2, ls='dashed', color='Blue')
-    #     print(filt_beg_freq[w], filt_end_freq[w])
-    #     lines1, = ax5.plot([filt_beg_freq[w], filt_end_freq[w]], [31 - i] * 2, linewidth=ms, color='green', alpha=alpha)
-    #     alpha -= 0.02
-    #     ms -= 0.1
-    #     print(31 - i)
-    #
-    # ax5.set(yticklabels=[])
-    # ax5.set(yticks=[])
-    # ax5.xaxis.set_ticks(np.arange(0, 41, 10))
-    # props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-    # # Create a Rectangle patch
-    #
-    # lines0.set_label('Initialized Filters')
-    # lines1.set_label('Learned Filters')
-    #
-    #
-    # # ax5_.text(0.8, 0.8, 'Most \nImportant', horizontalalignment='center',
-    # #      verticalalignment='center', transform=ax5_.transAxes)
-    #
-    # # ax5_.text(1, 0.15, 'Least \nImportant', horizontalalignment='center',
-    # #
-    # #      verticalalignment='center', transform=ax5_.transAxes, bbox=props)
-    # ax5_.annotate('', xy=(0.12, 0.2), xycoords='axes fraction', xytext=(0.12, 0.8),
-    #               arrowprops=dict(arrowstyle="simple", color='black'))
-    # ax5_.set_zorder(1)
-    # fig5.legend(bbox_to_anchor=(0.68, 1.0), fontsize='small', handlelength=2)
-    # ax5.set_xlabel('Frequency (Hz) ')
-    # ax5.set_ylabel('Filters Ranked by Importance\n')
-    # fig5.tight_layout()
-    # fig5.show()
-    #
-    #
-    # # incorrect
-    # fig5, ax5_ = plt.subplots(1, figsize=(5, 5.5))
-    # ax5_.axis('off')
-    # ax5 = fig5.add_axes([0.2, 0.12, 0.7, 0.68])
-    # p = model_0.state_dict()
-    # p_low = p['sinc_cnn2d.filt_b1']
-    # p_band = p['sinc_cnn2d.filt_band']
-    # #
-    # filt_beg_freq0 = (torch.abs(p_low) + 1 / 500)
-    # filt_end_freq0 = (filt_beg_freq0 + torch.abs(p_band) + 2 / 500)
-    #
-    # filt_beg_freq0 = filt_beg_freq0.cpu().numpy() * 500
-    # filt_end_freq0 = filt_end_freq0.cpu().numpy() * 500
-    #
-    # p = model.state_dict()
-    # p_low = p['sinc_cnn2d.filt_b1']
-    # p_band = p['sinc_cnn2d.filt_band']
-    # #
-    # filt_beg_freq = (torch.abs(p_low) + 1 / 500)
-    # filt_end_freq = (filt_beg_freq + torch.abs(p_band) + 2 / 500)
-    #
-    # filt_beg_freq = filt_beg_freq.cpu().numpy() * 500
-    # filt_end_freq = filt_end_freq.cpu().numpy() * 500
-    # alpha = 1
-    # ms = 5
-    # for i in range(0, 32):
-    #     w = np.argsort(attentionTs_mean_incorr)[-(i + 1)]
-    #     lines0, = ax5.plot([filt_beg_freq0[w], filt_end_freq0[w]], [31 - i] * 2, ls='dashed', color='Blue')
-    #     print(filt_beg_freq[w], filt_end_freq[w])
-    #     lines1, = ax5.plot([filt_beg_freq[w], filt_end_freq[w]], [31 - i] * 2, linewidth=ms, color='orange', alpha=alpha)
-    #     alpha -= 0.02
-    #     ms -= 0.1
-    #     print(31 - i)
-    #
-    # ax5.set(yticklabels=[])
-    # ax5.set(yticks=[])
-    # ax5.xaxis.set_ticks(np.arange(0, 41, 10))
-    # props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-    # # Create a Rectangle patch
-    #
-    # lines0.set_label('Initialized Filters')
-    # lines1.set_label('Learned Filters')
-    #
-    # # ax5_.text(0.8, 0.8, 'Most \nImportant', horizontalalignment='center',
-    # #      verticalalignment='center', transform=ax5_.transAxes)
-    #
-    # # ax5_.text(1, 0.15, 'Least \nImportant', horizontalalignment='center',
-    # #
-    # #      verticalalignment='center', transform=ax5_.transAxes, bbox=props)
-    # ax5_.annotate('', xy=(0.12, 0.2), xycoords='axes fraction', xytext=(0.12, 0.8),
-    #               arrowprops=dict(arrowstyle="simple", color='black'))
-    # ax5_.set_zorder(1)
-    # fig5.legend(bbox_to_anchor=(0.68, 1.0), fontsize='small', handlelength=2)
-    # ax5.set_xlabel('Frequency (Hz) ')
-    # ax5.set_ylabel('Filters Ranked by Importance\n')
-    # fig5.tight_layout()
-    # fig5.show()
 
     #%%
     # now that's lets the important time series
-
-
-    ### visulize training
-    timeTr = np.empty((0,len(y_att_test[0][0])))
-    for i in y_att_train_list:
-        timeTr = np.vstack((timeTr, np.array(torch.squeeze(i[0].cpu().detach()))))
-
-    timeTr_mean = np.mean(timeTr,axis=0)
-
-
-
-    weightsD = np.squeeze(np.array(model.module.fc.weight.cpu().detach()))
-    weightsD = weightsD/np.max(np.abs(weightsD))
-
-    weightsA = np.squeeze(np.array(model.module.fc_bound.weight.cpu().detach()))
-    weightsA = weightsA/np.max(np.abs(weightsA))
-
-
-    # attentionTt drift and alpha
-
-    # 4 most important frequencies weighted that are used to predict drift
-    timeV = np.arange(0,1000,125)+125/2
-    fig6,ax6 = plt.subplots(4,2,figsize= (10,10))
-    # ax6_ = fig6.add_axes([0.1, 0.1, 0.2, 1])
-    timeTr_chopped = (timeTr_mean * weightsD).reshape(-1, 8)
-    timeTr_chopped_A = (timeTr_mean * weightsA).reshape(-1,8)
-
-    # for i in range(0,4):
-    #     imp = -(i+1)
-    #     att_Ind = np.argsort(attentionTr_mean)
-    #     f1,f2 = filt_beg_freq[att_Ind[imp]], filt_end_freq[att_Ind[imp]]
-    #     ax6[i][0].plot(timeV,(np.mean(timeTr_chopped[att_Ind[imp] * 3 :att_Ind[imp] * 3+3],axis=0).T))
-    #     ax6[i][0].set_ylabel('\n%.0f Hz to              \n'% f1 + '%.0f Hz              '% f2,rotation=0)
-    #     ax6[i][0].set_xlabel('Time(ms)')
-    #     ax6[i][1].set_xlabel('Time(ms)')
-    #     ax6[i][1].plot(timeV, np.mean(timeTr_chopped_A[att_Ind[imp] * 3:att_Ind[imp] * 3 + 3], axis=0).T)
-    # ax6[0][0].set_title('Weighted Time Course \nof Drift')
-    # ax6[0][1].set_title('Weighted Time Course \n of Boundary')
-    # fig6.suptitle('Weights of FCL of 4 Most Important Bands')
-    # fig6.tight_layout()
-    # fig6.show()
-    # fig6.savefig('figures_final/' +  finalsubIDs[s] + 'fcp_weights_tr' +'.png')
-    #
-
-
-
-
-
-    ### visulize testing
-    timeTs = np.empty((0,len(y_att_test[0][0])))
-    for i in y_att_test_list:
-        timeTs = np.vstack((timeTs, np.array(torch.squeeze(i[0].cpu().detach()))))
-
-    timeTs_mean = np.mean(timeTs,axis=0)
-
-
-
-
-    ### visulize testing
 
     def getInd(attentionVec):
         '''returns sorted index, from important to least imporatn'''
         indV =np.argsort(attentionVec)[::-1]
         return indV
 
-    def getfreq(ind):
+    def getfreq(ind, filt_beg_freq, filt_end_freq):
         f1 = filt_beg_freq[ind]
         f2 = filt_end_freq[ind]
         return np.round(f1), np.round(f2)
-    ### visulize testing
-    topoTs = np.empty((0,32,98,370))
-    for i in y_att_test_list:
-        topoTs = np.vstack((topoTs, np.array(torch.squeeze(i[2].cpu().detach()))))
 
 
-    # make topo over time  ######################3
-
-    # topotTs is the topo plot after sincnet
-    topoTs_mean = np.mean(topoTs,axis=0)   # average across subjects
-    Ind0,Ind1 = np.arange(0,370,model.module.stride_window), np.arange(0,370,model.module.stride_window) + model.module.pool_window
-    pooled = np.zeros((32,num_chan,model.module.pool_window,model.module.output_size))
-    for pl in range(model.module.output_size):
-        pooled[:,:,:,pl] = topoTs_mean[:,:,Ind0[pl]:Ind1[pl]]
-    pooled_mean = np.mean(pooled,axis=-2)
-    ind = getInd(attentionTs_mean)
-
+    spatial_b2 =np.load(subresultpath + '/' + 'feature_test_b2_choice.npy')
+    L_spatial = spatial_b2.shape[-1]
     # fig8,ax8 = plt.subplots(1,8,figsize = (12,1.9))
     window = model.module.pool_window
     stride = model.module.stride_window
     outsize = model.module.output_size
-    windowOrig = (window *500)/370 *2 #window length ins
-    strideOrig =  (stride *500)/370 *2
+    windowOrig = (window *sr)/L_spatial *2 #window length ins
+    strideOrig =  (stride *sr)/L_spatial *2
     windowVec = np.arange(0,outsize) * strideOrig
-
-    # imp = 0
-    # for a, j in enumerate(ax8.flat):
-    #     # plottopomap((pooled_mean[ind[imp],:,a]), ax=j) #0-1 normalization or not
-    #
-    #     plottopomap((pooled_mean[ind[imp],:,a]), ax=j) #0-1 normalization or not
-    #     j.set_xlabel('%.0fms to \n '%windowVec[a] +'%.0fms'%np.round(windowVec+windowOrig)[a])
-    #
-    # # fig8.suptitle('Topoplots over time for %.0f Hz to '%getfreq(ind[imp])[0] +'%.0f Hz' %getfreq(ind[imp])[1])
-    # fig8.show()
-    # fig8.savefig('figures_final/' + finalsubIDs[s] + 'topo_%sfiltered_overtime_ts'%imp + '.png')
-    #
-
-    outsize = model.module.output_size
-    windowOrig = (window *500)/370 *2 #window length ins
-    strideOrig =  (stride *500)/370 *2
-    windowVec = np.arange(0,outsize) * strideOrig
-
 
 
 
     # make topo over time WEIGHTED
 
-    weights = np.squeeze(np.array(model.module.separable_conv.depthwise.weight.detach().cpu()))
+    weights_drift = np.squeeze(np.array(p['module.separable_conv_drift.depthwise.weight'].detach().cpu()))
+    weights_bound = np.squeeze(np.array(p['module.separable_conv_bound.depthwise.weight'].detach().cpu()))
+    weights_choice  = np.squeeze(np.array(p['module.separable_conv_choice.depthwise.weight'].detach().cpu()))
+    timeSeries_drift = np.squeeze(np.load(subresultpath + '/' + 'feature_test_separable_conv_drift.npy'))
+    timeSeries_bound = np.squeeze(np.load(subresultpath + '/' + 'feature_test_separable_conv_bound.npy'))
+    timeSeries_choice = np.squeeze(np.load(subresultpath + '/' + 'feature_test_separable_conv_choice.npy'))
 
     ##############################
     ##############################
@@ -1642,90 +1328,86 @@ for s in range(1,2):
 
 
 
-    # make topo with weights   ###
-
-    topoTs_mean = np.mean(topoTs, axis=0)
-    Ind0,Ind1 = np.arange(0,370,model.module.stride_window), np.arange(0,370,model.module.stride_window) + model.module.pool_window
-    pooled = np.zeros((32,num_chan,model.module.pool_window,model.module.output_size))
-    for pl in range(model.module.output_size):
-        pooled[:,:,:,pl] = topoTs_mean[:,:,Ind0[pl]:Ind1[pl]]
-    pooled_mean = np.mean(pooled,axis=-2)  #average pooled on time winodow
-
 
 
 ########## weights and time seires plot ##############3
     cmap = hotcold(neutral=0, interp='linear', lutsize=2048)
     mynorm = matplotlib.colors.Normalize(vmin=-1, vmax=1)
-    depth = model.module.separable_conv.depthwise.weight.shape[1]
+    depth =model.module.spatialConvDepth
     def getaxis(depth,fig):
         gs = GridSpec(depth, 3, figure=fig)
         axl = []
         if depth >=1:
-            ax0 = fig15.add_subplot(gs[0, 0:2])
-            ax3 = fig15.add_subplot(gs[0, 2])
+            ax0 = fig.add_subplot(gs[0, 0:2])
+            ax3 = fig.add_subplot(gs[0, 2])
             axl.extend([ax0,ax3])
         if depth >= 2:
-            ax1 = fig15.add_subplot(gs[1, 0:2])
-            ax4 = fig15.add_subplot(gs[1, 2])
+            ax1 = fig.add_subplot(gs[1, 0:2])
+            ax4 = fig.add_subplot(gs[1, 2])
             axl.extend([ax1, ax4])
         if depth ==3:
-            ax2 = fig15.add_subplot(gs[2, 0:2])
-            ax5 = fig15.add_subplot(gs[2, 2])
+            ax2 = fig.add_subplot(gs[2, 0:2])
+            ax5 = fig.add_subplot(gs[2, 2])
             axl.extend([ax2, ax5])
         return axl
 
-    for imp in [0,1,2,3]:
 
-        fig15 = plt.figure(figsize=(12, 4*depth))
-        axl = getaxis(depth,fig15)
+    def plotTimeSeries(timeSeries, weights_normliazed, att_weights, filt_begin,filt_end, branchName,depth,color):
+        topoTs_mean = np.mean(timeSeries,axis=0)
+        ind = getInd(att_weights)
+        for imp in [0,1,2,3,4]:
+            fig15 = plt.figure(figsize=(12, 4*depth))
+            axl = getaxis(depth,fig15)
 
-        f1,f2 = getfreq(ind[imp])
-        weightsSelected = weights[ind[imp]*depth:ind[imp]*depth+depth,:]
-        # weight the time series
-        topoTs_mean = np.mean(topoTs,axis=0)
-        # topoTs_mean = topoTs[24,:,:]
-        topoTs_mean_freq = topoTs_mean[ind[imp],:,:]  # the frequency band of interest
+            f1,f2 = getfreq(ind[imp], filt_begin, filt_end)
+            weightsSelected = weights_normliazed[ind[imp]*depth:ind[imp]*depth+depth,:]
+            # weight the time series
 
-        for a, j in enumerate(axl[int(-len(axl)/2):]):
-            im, cn = plottopomap(norm(weightsSelected[a , :]), ax=j)
-            ax_pos = j.get_position().get_points()
-            ymin_cb, xmin_cb = ax_pos[~np.eye(2, 2, dtype=bool)]
-            cb_ax = fig15.add_axes([xmin_cb-0.08, ymin_cb-0.05,0.1,(0.2*1/depth)/0.33])
-            cb_ax.axis('off')
-            fig15.colorbar(plt.cm.ScalarMappable(norm=mynorm, cmap=cmap),  ax=cb_ax)
+            # topoTs_mean = topoTs[24,:,:]
+            topoTs_mean_freq = topoTs_mean[ind[imp],:]  # the frequency band of interest
 
-            j.set_title('Depth %s Weights'% int(a+1))
-        xVec =np.linspace(0,1000,topoTs_mean_freq.shape[1])
+            for a, j in enumerate(axl[int(-len(axl)/2):]):
+                im, cn = plottopomap(norm(weightsSelected[a , :]), ax=j)
+                ax_pos = j.get_position().get_points()
+                ymin_cb, xmin_cb = ax_pos[~np.eye(2, 2, dtype=bool)]
+                cb_ax = fig15.add_axes([xmin_cb-0.06, ymin_cb,0.1,(0.2*1/depth)/0.33])
+                cb_ax.axis('off')
+                fig15.colorbar(plt.cm.ScalarMappable(norm=mynorm, cmap=cmap),  ax=cb_ax)
 
-        for w, j in enumerate(axl[:int(len(axl)/2)]):
-            amp = topoTs_mean_freq.T @ norm(weightsSelected[w, :])
-            j.plot(xVec, amp-amp[0])
-            j.set_title('Weighted ERP (Depth %s)'%s)
-        # j[0].plot(xVec,np.mean(topoTs_mean_freq,axis=0))
-        # amp0 = topoTs_mean_freq.T @ norm(weightsSelected[0, :])
-        # amp1 = topoTs_mean_freq.T @ norm(weightsSelected[1, :])
-        # amp2 = topoTs_mean_freq.T @ norm(weightsSelected[2, :])
-        # ax0.plot(xVec,amp0 - amp0[0])
-        # ax1.plot(xVec,amp1 - amp1[0])
-        # ax2.plot(xVec,amp2 - amp2[0])
-        # j[0].set_title('Average ERP without Weights')
-        # ax0.set_title('Weighted ERP (Depth 1)')
-        # ax1.set_title('Weighted ERP (Depth 2)')
-        # ax2.set_title('Weighted ERP (Depth 3)')
-        for a, j in enumerate(axl[:int(len(axl)/2)]):
-            j.set_xlabel('Times (ms)')
-            j.set_ylabel('Amplitude (Normalized)')
-            j.axvline(np.median(np.abs(test_target)) * 1000, label = 'median RT',linewidth = 4, alpha=0.8,\
-                      color = 'tab:purple')
-            if a ==0 :
-                j.legend()
-        # fig15.text(0.005,0.005,'Weights are normalized on [-1,1]',color= 'red')
-        fig15.suptitle('%i Hz to ' % f1 + '%i Hz' % f2 + ' (Drift Predictions)')
-        fig15.text(0.5, 0.004, '*Weights are normalized on [-1,1]', color='black',fontsize = 22)
+                j.set_title('Weights')
+            xVec =np.linspace(0,1000,timeSeries_drift.shape[-1])
 
-        fig15.tight_layout()
-        fig15.show()
-        fig15.savefig(figurepath + '/' + finalsubIDs[s] +'erp_weights_%s_filt.png'%imp)
+            for w, j in enumerate(axl[:int(len(axl)/2)]):
+                amp = topoTs_mean_freq
+                amp = amp - amp[0]
+                j.plot(xVec, amp,color =color)
+                j.set_title('Weighted ERP')
+            for a, j in enumerate(axl[:int(len(axl)/2)]):
+                j.set_xlabel('Times (ms)')
+                j.set_ylabel('Amplitude (Normalized)')
+                j.axvline(np.median(np.abs(test_target)) * 1000, label = 'median RT',linewidth = 4, alpha=0.8,\
+                          color = 'tab:purple')
+                if a ==0 :
+                    j.legend()
+            # fig15.text(0.005,0.005,'Weights are normalized on [-1,1]',color= 'red')
+            fig15.suptitle('%i Hz to ' % f1 + '%i Hz' % f2 + ' (' + branchName +')')
+            fig15.text(0.5, 0.004, '*Weights are normalized on [-1,1]', color='black',fontsize = 22)
+
+            fig15.tight_layout()
+            fig15.subplots_adjust(right=0.9)
+            fig15.show()
+            fig15.savefig(figurepath + '/' + finalsubIDs[s] +'erp_weights_%s_filt' %imp+ branchName +'.png')
+        return
+
+
+    plotTimeSeries(timeSeries_drift, weights_drift, attentionTs_drift_mean, filt_begin_drift, filt_end_drift, 'drift',
+                   1,driftcolor)
+    plotTimeSeries(timeSeries_bound, weights_bound, attentionTs_bound_mean, filt_begin_bound, filt_end_bound, 'bound',
+                   1,boundcolor)
+    plotTimeSeries(timeSeries_choice, weights_choice, attentionTs_choice_mean, filt_begin_choice, filt_end_choice, 'choice',
+                   1,choicecolor)
+
+    # LASTLY, SVD!!!
 
 
 
@@ -1737,7 +1419,7 @@ print(t2-t1)
 if createConfig:
     config_object.read(modelpath + '/config.ini')
     config_object["loss_func"] = {
-        "loss_function": "wfpt, corr(drift, rt), BCEloss, 0.5*sum(boundary)",
+        "loss_function": "wfpt, corr(drift, rt), BCEloss, 1*sum(boundary)",
         "optimizer_drift": optimizer_drift,
         "optimizer_boundary": optimizer_alpha,
         "optimizer_choice": optimizer_choice
