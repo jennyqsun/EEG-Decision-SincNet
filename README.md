@@ -9,10 +9,14 @@ It aims to provide a single package that is:
 *
 
 
+
 ## Cite us
 
 
 ## How to use
+
+1. set up anaconda [link](https://docs.anaconda.com/anaconda/install/)  
+2. 
 
 
 
