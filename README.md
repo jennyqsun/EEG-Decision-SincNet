@@ -17,11 +17,6 @@ It aims to provide a single package that is:
 
 1. Install anaconda [link](https://docs.anaconda.com/anaconda/install/)  
 2. git clone this repository
-3. in your terminal  
-   ```cd EEG-Decision-SincNet/```
-5. 
-
-
-
-
+3. in your terminal ```cd EEG-Decision-SincNet/```
+4. create an conda environment using the .yml file. ```conda env create -f environment.yml```
 
