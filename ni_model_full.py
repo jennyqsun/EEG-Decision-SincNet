@@ -21,7 +21,7 @@ import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib import interactive
 interactive(True)
-from models_full import *
+from nn_models_full import *
 import numpy as np
 import os
 import hdf5storage
@@ -42,11 +42,14 @@ import os
 from configparser import ConfigParser
 from topo import *
 from my_wfpt import *
-import matplotlib.ticker as ticker
-import matplotlib.patches as patches
-from mpl_toolkits.axes_grid.inset_locator import inset_axes
+
 
 # set up cuda
+
+#TODO: add cfg performance corelation metric
+#TODO: add second split
+#TODO: add last split
+#TODO: add last split
 
 torch.cuda.device_count()
 gpu0  = torch.device(0)
@@ -79,20 +82,20 @@ trialdur = timeend * 2 - timestart * 2
 
 correctModel = False  # whether the signed rt is coded as correct and incorrect
 choiceModel = True   # whether target is choice 1 and choice 2
-notrainMode = True     # if true, just load the model
+notrainMode = False     # if true, just load the model
                         # if false, train model
 
-saveForwardHook = False
+saveForwardHook = True
 if notrainMode:
     keepTrainMode = False
     createConfig = False
+    saveForwardHook=False
 else:
     createConfig = True    # when training, create config files.
     keepTrainMode = False  # set this to be True if wants to keep training from previous model
-    zScoreData = False
+    zScoreData = False  # if tranining, default to save Forward Hook
 
-
-datapath = '/home/jenny/sincnet_eeg/ni_data/exp5data/'
+datapath = '/ssd/ni_data/exp5data/'
 sr = 500
 # timeend = 800 # when 300ms after stim
 
@@ -116,7 +119,7 @@ model = torch.nn.DataParallel(model, device_ids = [1])
 ######################## creating directory and file nmae ############for s########
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_ni_2param_onebound_classify_full_cfg' # clamp at forward
-postname = '_ni_2param_onebound_classify_full_reg'
+postname = '_ni_2param_onebound_classify_full_reglog_rmsp'
 # postname = '_ni_2param_onebound_choice_model0'
 # postname = '_ni_2param_onebound_choice_model0'
 
@@ -188,7 +191,6 @@ def chansets_new():
     return chans
 
 def loadsubjdict(path, subID, filetype = '.mat'):
-    path = '/home/jenny/sincnet_eeg/ni_data/exp5data/'
     if filetype == '.mat':
         datadict = hdf5storage.loadmat(path + subID+ '_high' + '.mat')
     else:
@@ -596,11 +598,13 @@ for s in range(0,4):
     for n, p in model.named_parameters():
         if "choice" in n:
             choice_param.append(p)
-
-    optimizer_drift = torch.optim.Adam(drift_param, lr=learning_rate)
-    optimizer_alpha = torch.optim.Adam(alpha_param, lr=learning_rate,weight_decay= weight_decay)
-    optimizer_choice = torch.optim.Adam(choice_param, lr=learning_rate)
-
+    #
+    # optimizer_drift = torch.optim.Adam(drift_param, lr=learning_rate)
+    # optimizer_alpha = torch.optim.Adam(alpha_param, lr=learning_rate,weight_decay= weight_decay)
+    # optimizer_choice = torch.optim.Adam(choice_param, lr=learning_rate)
+    optimizer_drift = torch.optim.RMSprop(drift_param, lr=learning_rate, alpha=0.95,eps=1e-08)
+    optimizer_alpha = torch.optim.RMSprop(alpha_param, lr=learning_rate,alpha=0.95,eps=1e-08)
+    optimizer_choice = torch.optim.RMSprop(choice_param, lr=learning_rate,alpha=0.95,eps=1e-08)
     early_stopping = EarlyStopping(patience=EarlyStopPatience, verbose=True)
 
     ###########################################################################################
@@ -655,7 +659,9 @@ for s in range(0,4):
                 # loss = my_loss(torch.abs(target.cuda()), outputs.cuda(), ndt,outputs_alpha.cuda()) -correlation_loss(outputs.cuda(),torch.abs(target.cuda()))
                 loss = my_loss(target_.cuda(), outputs.cuda(), ndt, outputs_alpha.cuda()) - correlation_loss(
                     outputs.cuda(), (target_.cuda())) +  1*criterion(torch.squeeze(choice), torch.squeeze(choice_target))\
-                              + 1*outputs_alpha.cuda().sum()
+                              + torch.log(outputs_alpha.cuda()).sum()
+                # loss = my_loss(target_.cuda(), outputs.cuda(), ndt, outputs_alpha.cuda()) +  1*criterion(torch.squeeze(choice), torch.squeeze(choice_target))\
+                #               + torch.log(1*outputs_alpha.cuda()).sum()
 
                 # Backward and optimize
                 optimizer_drift.zero_grad()
@@ -1174,20 +1180,20 @@ for s in range(0,4):
             print(idx)
         saveForwardHookTest(FEAT, TARGET, subresultpath)
 
-        ## save train features ##
-        FEAT = {}
-        TARGET = []
-        features = {}
-        for idx, (inputs, target) in enumerate(train_loader):
-            inputs = inputs.to(device)
-            TARGET.extend(target.numpy())
-            drift, bound, choice = model(inputs)
-            for key in features:
-                if idx == 0:
-                    FEAT[key] = []
-                FEAT[key].extend(features[key].cpu().numpy())
-            print(idx)
-        saveForwardHookTrain(FEAT, TARGET, subresultpath)
+        # ## save train features ##
+        # FEAT = {}
+        # TARGET = []
+        # features = {}
+        # for idx, (inputs, target) in enumerate(train_loader):
+        #     inputs = inputs.to(device)
+        #     TARGET.extend(target.numpy())
+        #     drift, bound, choice = model(inputs)
+        #     for key in features:
+        #         if idx == 0:
+        #             FEAT[key] = []
+        #         FEAT[key].extend(features[key].cpu().numpy())
+        #     print(idx)
+        # saveForwardHookTrain(FEAT, TARGET, subresultpath)
 
 
 
@@ -1419,13 +1425,11 @@ print(t2-t1)
 if createConfig:
     config_object.read(modelpath + '/config.ini')
     config_object["loss_func"] = {
-        "loss_function": "wfpt, corr(drift, rt), BCEloss, 1*sum(boundary)",
+        "loss_function": "wfpt, BCEloss, log(boundary).sum(), corr(drift, rt)",
         "optimizer_drift": optimizer_drift,
         "optimizer_boundary": optimizer_alpha,
         "optimizer_choice": optimizer_choice
     }
-    config_object["time_complexity"] = {
-        "time":t2-t1
-    }
+    config_object["time_complexity"] = {"time":t2-t1}
     with open(modelpath + '/config.ini', 'w') as conf:
         config_object.write(conf)

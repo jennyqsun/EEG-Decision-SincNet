@@ -14,7 +14,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch.autograd import Variable
 import math
-from models_sinc_spatial import *
+from layers_sinc_spatial import *
 
 
 
