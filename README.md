@@ -15,10 +15,11 @@ It aims to provide a single package that is:
 
 ## How to use
 
-1. set up anaconda [link](https://docs.anaconda.com/anaconda/install/)  
-2. 
-
-
+1. Install anaconda [link](https://docs.anaconda.com/anaconda/install/)  
+2. git clone this repository
+3. in your terminal  
+   ```cd EEG-Decision-SincNet/```
+5. 
 
 
 
