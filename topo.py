@@ -13,7 +13,8 @@ import numpy as np
 from hdf5storage import loadmat
 import scipy.io
 import readchans
-
+from bipolar import hotcold
+hotcoldmap = hotcold(neutral=0, interp='linear', lutsize=2048)
 def chansets():
     chans = readchans.getchans()
     chanlist = chans['out.lf'] + chans['out.rf'] +chans['out.lc'] +chans['out.rc'] +chans['out.mid'] \
@@ -77,18 +78,9 @@ def plottopo(data, ax, maskchan, dcolor, dsize):
 
 
 
-def plottopomap(data, ax):
+def plottopomap(data, ax, cmap=hotcoldmap):
     '''inputs: '''
     data = np.reshape(data,(-1,1))
-    # group = np.zeros(98)
-    # for m in range(len(maskchan)):
-    #     group[maskchan[m]] = 1
-    # # group[maskchan[1]] = 1
-    # d = dict(marker='o', markerfacecolor= dcolor, markeredgecolor='k', linewidth=0, markersize=dsize, alpha=0.9)
-    # biosemi_montage = mne.channels.make_standard_montage('biosemi128')
-    # n_channels = len(biosemi_montage.ch_names)
-    # np.random.seed(2)
-    # data = np.random.uniform(-2,2,(98,1))
     chanlist = chansets_new()
 
     locdic = scipy.io.loadmat('eginn128hm.mat')['EGINN128']
@@ -119,4 +111,5 @@ def plottopomap(data, ax):
     # fig, ax = plt.subplots(ncols=1, figsize=(8, 4), gridspec_kw=dict(top=0.9),
     #                        sharex=True, sharey=True)
 
-    mne.viz.plot_topomap(evoked.data[:,0], evoked.info, axes=ax,names=basic_info['ch_names'],cmap='jet')
+    im, cm = mne.viz.plot_topomap(evoked.data[:,0], evoked.info, axes=ax,names=basic_info['ch_names'],cmap=cmap, show=False)
+    return im,cm
