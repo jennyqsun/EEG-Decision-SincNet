@@ -93,7 +93,7 @@ if notrainMode:
 else:
     createConfig = True    # when training, create config files.
     keepTrainMode = False  # set this to be True if wants to keep training from previous model
-    zScoreData = True  # if tranining, default to save Forward Hook
+    zScoreData = False  # if tranining, default to save Forward Hook
 
 datapath = '/ssd/ni_data/exp5data/'
 sr = 500
@@ -120,7 +120,7 @@ model = torch.nn.DataParallel(model, device_ids = [1])
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_ni_2param_onebound_classify_full_cfg' # clamp at forward
-postname = '_ni_2param_onebound_classify_full_reglog_adam_unclamp2'
+postname = '_ni_2param_onebound_classify_full_reglog_adam_unclamp3'
 # postname = '_ni_2param_onebound_choice_model0'
 # postname = '_ni_2param_onebound_choice_model0'
 
@@ -451,7 +451,7 @@ if createConfig:
         "weights_constrain": model.module.sinc_cnn2d_drift.cutoff
     }
     config_object["Notes"] = {
-        "notes": 'this version is created when only nyquist clampping is done during forward pass ',
+        "notes": 'this version is created when only nyquist clampping is done during forward pass, not zscored',
     }
     #Write the above sections to config.ini file
     with open(modelpath + '/config.ini', 'w') as conf:
@@ -476,7 +476,7 @@ mylist = np.arange(0, len(finalsubIDs))
 ############################################
 ############### set subject ######################
 ############################################
-for s in range(0,1):
+for s in range(0,4):
     # a results dictionary for storing all the data
     finalsubIDs = getIDs(datapath)
     # for i in range(0,1):

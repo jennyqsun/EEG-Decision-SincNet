@@ -87,9 +87,10 @@ class SincDriftBoundAttChoice_full(nn.Module):
 
 
     # attention layers
-        self.gap0_drift = torch.nn.AdaptiveAvgPool2d(1)
+
 
         ### Fully Connected Multi-Layer Perceptron (FC-MLP)
+        self.gap0_drift = torch.nn.AdaptiveAvgPool2d(1)
         self.mlp0_drift = torch.nn.Sequential(
             torch.nn.Linear(self.num_filters, self.num_filters // self.attentionLatent, bias=False),
             torch.nn.ReLU(inplace=True),
@@ -98,9 +99,10 @@ class SincDriftBoundAttChoice_full(nn.Module):
         )
 
 
-        self.gap0_bound = torch.nn.AdaptiveAvgPool2d(1)
+
 
         ### Fully Connected Multi-Layer Perceptron (FC-MLP)
+        self.gap0_bound = torch.nn.AdaptiveAvgPool2d(1)
         self.mlp0_bound = torch.nn.Sequential(
             torch.nn.Linear(self.num_filters, self.num_filters // self.attentionLatent, bias=False),
             torch.nn.ReLU(inplace=True),
@@ -108,9 +110,10 @@ class SincDriftBoundAttChoice_full(nn.Module):
             torch.nn.Sigmoid()
         )
 
-        self.gap0_choice = torch.nn.AdaptiveAvgPool2d(1)
+
 
         ### Fully Connected Multi-Layer Perceptron (FC-MLP)
+        self.gap0_choice = torch.nn.AdaptiveAvgPool2d(1)
         self.mlp0_choice = torch.nn.Sequential(
             torch.nn.Linear(self.num_filters, self.num_filters // self.attentionLatent, bias=False),
             torch.nn.ReLU(inplace=True),
@@ -144,7 +147,7 @@ class SincDriftBoundAttChoice_full(nn.Module):
         score_new_drift = x0_drift * y0_drift.expand_as(x0_drift)
         # end attention
 
-        # start attention for choice
+        # start attention for bound
         b_bound, c_bound, _, _ = x0_bound.size()
         y0_bound = self.gap0_bound(x0_bound).view(b_bound, c_bound)
         y0_bound = self.mlp0_bound(y0_bound).view(b_bound, c_bound, 1, 1)
