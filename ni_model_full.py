@@ -93,7 +93,7 @@ if notrainMode:
 else:
     createConfig = True    # when training, create config files.
     keepTrainMode = False  # set this to be True if wants to keep training from previous model
-    zScoreData = False  # if tranining, default to save Forward Hook
+    zScoreData = True  # if tranining, default to save Forward Hook
 
 datapath = '/ssd/ni_data/exp5data/'
 sr = 500
@@ -118,8 +118,9 @@ model = torch.nn.DataParallel(model, device_ids = [1])
 
 ######################## creating directory and file nmae ############for s########
 # postname = '_prestim500_1000_0123_ddm_2param'
+# postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_ni_2param_onebound_classify_full_cfg' # clamp at forward
-postname = '_ni_2param_onebound_classify_full_reglog_rmsp'
+postname = '_ni_2param_onebound_classify_full_reglog_adam_unclamp2'
 # postname = '_ni_2param_onebound_choice_model0'
 # postname = '_ni_2param_onebound_choice_model0'
 
@@ -449,6 +450,9 @@ if createConfig:
         "seed": seednum,
         "weights_constrain": model.module.sinc_cnn2d_drift.cutoff
     }
+    config_object["Notes"] = {
+        "notes": 'this version is created when only nyquist clampping is done during forward pass ',
+    }
     #Write the above sections to config.ini file
     with open(modelpath + '/config.ini', 'w') as conf:
         config_object.write(conf)
@@ -472,7 +476,7 @@ mylist = np.arange(0, len(finalsubIDs))
 ############################################
 ############### set subject ######################
 ############################################
-for s in range(0,4):
+for s in range(0,1):
     # a results dictionary for storing all the data
     finalsubIDs = getIDs(datapath)
     # for i in range(0,1):
@@ -578,7 +582,7 @@ for s in range(0,4):
     # criterion = nn.BCEWithLogitsLoss()
     # criterion = nn.MSELoss()
 
-    weight_decay = 1e-2
+    weight_decay = 1e-4
 
     # optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -599,12 +603,12 @@ for s in range(0,4):
         if "choice" in n:
             choice_param.append(p)
     #
-    # optimizer_drift = torch.optim.Adam(drift_param, lr=learning_rate)
-    # optimizer_alpha = torch.optim.Adam(alpha_param, lr=learning_rate,weight_decay= weight_decay)
-    # optimizer_choice = torch.optim.Adam(choice_param, lr=learning_rate)
-    optimizer_drift = torch.optim.RMSprop(drift_param, lr=learning_rate, alpha=0.95,eps=1e-08)
-    optimizer_alpha = torch.optim.RMSprop(alpha_param, lr=learning_rate,alpha=0.95,eps=1e-08)
-    optimizer_choice = torch.optim.RMSprop(choice_param, lr=learning_rate,alpha=0.95,eps=1e-08)
+    optimizer_drift = torch.optim.Adam(drift_param, lr=learning_rate, weight_decay= weight_decay)
+    optimizer_alpha = torch.optim.Adam(alpha_param, lr=learning_rate,weight_decay= weight_decay)
+    optimizer_choice = torch.optim.Adam(choice_param, lr=learning_rate,weight_decay= weight_decay)
+    # optimizer_drift = torch.optim.RMSprop(drift_param, lr=learning_rate, alpha=0.95,eps=1e-08)
+    # optimizer_alpha = torch.optim.RMSprop(alpha_param, lr=learning_rate,alpha=0.95,eps=1e-08)
+    # optimizer_choice = torch.optim.RMSprop(choice_param, lr=learning_rate,alpha=0.95,eps=1e-08)
     early_stopping = EarlyStopping(patience=EarlyStopPatience, verbose=True)
 
     ###########################################################################################
@@ -675,10 +679,10 @@ for s in range(0,4):
                 optimizer_alpha.step()
                 optimizer_choice.step()
                 # optimizer.step()
-                clipper = weightConstraint(model=model)
-                model.module.sinc_cnn2d_drift.apply(clipper)
-                model.module.sinc_cnn2d_choice.apply(clipper)
-                model.module.sinc_cnn2d_bound.apply(clipper)
+                # clipper = weightConstraint(model=model)
+                # model.module.sinc_cnn2d_drift.apply(clipper)
+                # model.module.sinc_cnn2d_choice.apply(clipper)
+                # model.module.sinc_cnn2d_bound.apply(clipper)
                 epoch_loss.append(loss.detach().cpu().numpy())
 
                 print(f'Epoch [{epoch + 1}/{num_epochs}], Step [{i + 1}/{n_total_steps}], Loss: {loss.item():.4f}')
@@ -745,10 +749,10 @@ for s in range(0,4):
         choice_targetlist_test.extend(choice_test_target.tolist())
         #     # test_data, test_target = next(iter(test_loader))
         with torch.no_grad():
-            clipper = weightConstraint(model=model)
-            model.module.sinc_cnn2d_drift.apply(clipper)
-            model.module.sinc_cnn2d_choice.apply(clipper)
-            model.module.sinc_cnn2d_bound.apply(clipper)
+            # clipper = weightConstraint(model=model)
+            # model.module.sinc_cnn2d_drift.apply(clipper)
+            # model.module.sinc_cnn2d_choice.apply(clipper)
+            # model.module.sinc_cnn2d_bound.apply(clipper)
             pred, pred_1,choice_test= model(test_data.cuda())
         choice_predict_test.extend(np.squeeze((choice_test).detach().cpu().round().numpy()).tolist())
         pred_1_copy = pred_1.detach().cpu()
@@ -830,10 +834,10 @@ for s in range(0,4):
         # device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
         # Forward pass
         with torch.no_grad():
-            clipper = weightConstraint(model=model)
-            model.module.sinc_cnn2d_drift.apply(clipper)
-            model.module.sinc_cnn2d_choice.apply(clipper)
-            model.module.sinc_cnn2d_bound.apply(clipper)
+            # clipper = weightConstraint(model=model)
+            # model.module.sinc_cnn2d_drift.apply(clipper)
+            # model.module.sinc_cnn2d_choice.apply(clipper)
+            # model.module.sinc_cnn2d_bound.apply(clipper)
             outputs, outputs_1,choice_train = model(data.cuda())
         choice_predict_train.extend(np.squeeze(choice_train.detach().cpu().round().numpy()).tolist())
 
@@ -1241,13 +1245,14 @@ for s in range(0,4):
 
 
     # get the filters learned from model
-    _, _, filt_begin_drift0, filt_end_drift0 = getFilt(p0, 'drift', sr)
-    _, _, filt_begin_bound0, filt_end_bound0= getFilt(p0, 'bound', sr)
-    _, _, filt_begin_choice0, filt_end_choice0= getFilt(p0, 'choice', sr)
+    cutoff = 250
+    _, _, filt_begin_drift0, filt_end_drift0 = getFilt(p0, 'drift', sr, cutoff=cutoff)
+    _, _, filt_begin_bound0, filt_end_bound0= getFilt(p0, 'bound', sr,cutoff=cutoff)
+    _, _, filt_begin_choice0, filt_end_choice0= getFilt(p0, 'choice', sr,cutoff=cutoff)
 
-    _, _, filt_begin_drift, filt_end_drift = getFilt(p, 'drift', sr)
-    _, _, filt_begin_bound, filt_end_bound = getFilt(p, 'bound', sr)
-    _, _, filt_begin_choice, filt_end_choice= getFilt(p, 'choice', sr)
+    _, _, filt_begin_drift, filt_end_drift = getFilt(p, 'drift', sr,cutoff=cutoff)
+    _, _, filt_begin_bound, filt_end_bound = getFilt(p, 'bound', sr,cutoff=cutoff)
+    _, _, filt_begin_choice, filt_end_choice= getFilt(p, 'choice', sr,cutoff=cutoff)
 
 
     # get the attention weights
@@ -1278,6 +1283,7 @@ for s in range(0,4):
     ax.plot(freq, P2,  label ='Boundary', linewidth = 6,color = boundcolor)
     ax.plot(freq, P3,  label ='Choice',linewidth = 6, color = choicecolor)
     ax.set_xlim(0,50)
+    ax.set_ylim(0,np.max((P1,P2,P3)) + 0.2)
     ax.set_ylim(0,np.max((P1,P2,P3)) + 0.2)
     ax.set_xlabel('Frequency (Hz)')
     ax.set_ylabel('Amplitude')
