@@ -12,15 +12,9 @@ import mne
 import numpy as np
 from hdf5storage import loadmat
 import scipy.io
-import readchans
 from bipolar import hotcold
 hotcoldmap = hotcold(neutral=0, interp='linear', lutsize=2048)
-def chansets():
-    chans = readchans.getchans()
-    chanlist = chans['out.lf'] + chans['out.rf'] +chans['out.lc'] +chans['out.rc'] +chans['out.mid'] \
-                + chans['out.lp'] +chans['out.rp'] + chans['out.lo'] +chans['out.ro']
-    chanlist.remove(128)
-    return chanlist
+
 
 def chansets_new():
     chans= np.arange(0,128)

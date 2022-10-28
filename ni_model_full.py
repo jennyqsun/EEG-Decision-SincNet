@@ -82,7 +82,7 @@ trialdur = timeend * 2 - timestart * 2
 
 correctModel = False  # whether the signed rt is coded as correct and incorrect
 choiceModel = True   # whether target is choice 1 and choice 2
-notrainMode = False     # if true, just load the model
+notrainMode = True     # if true, just load the model
                         # if false, train model
 
 saveForwardHook = True
@@ -93,7 +93,7 @@ if notrainMode:
 else:
     createConfig = True    # when training, create config files.
     keepTrainMode = False  # set this to be True if wants to keep training from previous model
-    zScoreData = False  # if tranining, default to save Forward Hook
+    zScoreData = True  # if tranining, default to save Forward Hook
 
 datapath = '/ssd/ni_data/exp5data/'
 sr = 500
@@ -120,7 +120,7 @@ model = torch.nn.DataParallel(model, device_ids = [1])
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_ni_2param_onebound_classify_full_cfg' # clamp at forward
-postname = '_ni_2param_onebound_classify_full_reglog_adam_unclamp3'
+postname = '_ni_2param_onebound_classify_full_reglog_adam_unclamp2'
 # postname = '_ni_2param_onebound_choice_model0'
 # postname = '_ni_2param_onebound_choice_model0'
 
@@ -1148,6 +1148,7 @@ for s in range(0,4):
 
     from get_filt import *
     from sinc_fft import *
+    from normalize import *
 
     ######### forward hook for all modules
 
@@ -1203,14 +1204,6 @@ for s in range(0,4):
 
     ################# visualize filters ###############################
 
-    def norm(vec):
-        f_min, f_max = np.min(vec), np.max(vec)
-        newV =  2* (vec - f_min) / (f_max - f_min) -1
-        return newV
-    def normZeroOne(vec):
-        f_min, f_max = np.min(vec), np.max(vec)
-        newV =  (vec - f_min) / (f_max - f_min)
-        return newV
 
     def plotFilterRank(filt_beg_freq0,filt_end_freq0, filt_beg_freq, filt_end_freq, attentionTs_mean, color,branchName):
         fig5, ax5_ = plt.subplots(1, figsize=(5, 5.5))
@@ -1274,9 +1267,11 @@ for s in range(0,4):
     myfilters_bound = makeSincFilters(filt_begin_bound, filt_end_bound)
     myfilters_choice = makeSincFilters(filt_begin_choice, filt_end_choice)
 
-    freq, P1  = plotFFT(myfilters_drift.T @ attentionTs_drift_mean)
-    freq, P2  = plotFFT(myfilters_bound.T @ attentionTs_bound_mean)
-    freq, P3  = plotFFT(myfilters_choice.T @ attentionTs_choice_mean)
+
+    freq, P1  = plotFFT(myfilters_drift.T @ (attentionTs_drift_mean))
+    freq, P2  = plotFFT(myfilters_bound.T @ (attentionTs_bound_mean))
+    freq, P3  = plotFFT(myfilters_choice.T @ (attentionTs_choice_mean))
+
 
     fig10, ax = plt.subplots(figsize = (8,8))
     ax.plot(freq, P1, label = 'Drift', linewidth = 6,color = driftcolor)
@@ -1290,6 +1285,23 @@ for s in range(0,4):
     fig10.subplots_adjust(right = 0.8)
     ax.legend(bbox_to_anchor=[1.3, 1])
     fig10.savefig(figurepath + '/' + finalsubIDs[s] + 'filters_weighted_rs' + '.png')
+
+    freq, P1  = plotFFT(myfilters_drift.T @ norm(attentionTs_drift_mean))
+    freq, P2  = plotFFT(myfilters_bound.T @ norm(attentionTs_bound_mean))
+    freq, P3  = plotFFT(myfilters_choice.T @ norm(attentionTs_choice_mean))
+
+    fig11, ax11 = plt.subplots(figsize = (8,8))
+    ax11.plot(freq, P1, label = 'Drift', linewidth = 6,color = driftcolor)
+    ax11.plot(freq, P2,  label ='Boundary', linewidth = 6,color = boundcolor)
+    ax11.plot(freq, P3,  label ='Choice',linewidth = 6, color = choicecolor)
+    ax11.set_xlim(0,50)
+    ax11.set_ylim(0,np.max((P1,P2,P3)) + 0.2)
+    ax11.set_ylim(0,np.max((P1,P2,P3)) + 0.2)
+    ax11.set_xlabel('Frequency (Hz)')
+    ax11.set_ylabel('Amplitude (Normalized)')
+    fig11.subplots_adjust(right = 0.8)
+    ax11.legend(bbox_to_anchor=[1.3, 1])
+    fig11.savefig(figurepath + '/' + finalsubIDs[s] + 'filters_Normweighted_rs' + '.png')
 
     plotFilterRank(filt_begin_drift0, filt_end_drift0, filt_begin_drift, filt_end_drift, attentionTs_drift_mean,color=driftcolor,branchName = 'drift')
     plotFilterRank(filt_begin_bound0, filt_end_bound0, filt_begin_bound, filt_end_bound, attentionTs_bound_mean,color = boundcolor,branchName = 'bound')
