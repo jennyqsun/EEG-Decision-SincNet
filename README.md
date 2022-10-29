@@ -4,22 +4,14 @@ This github is an open-source repository for fitting Decision SincNet. Decision 
 
 
 ## Cite us
-* @INPROCEEDINGS{9892272,
-
+* [link](https://ieeexplore.ieee.org/document/9892272)@INPROCEEDINGS{9892272,
   author={Sun, Qinhua Jenny and Vo, Khuong and Lui, Kitty and Nunez, Michael and Vandekerckhove, Joachim and Srinivasan, Ramesh},
-
   booktitle={2022 International Joint Conference on Neural Networks (IJCNN)}, 
-
   title={Decision SincNet: Neurocognitive models of decision making that predict cognitive processes from neural signals}, 
-
   year={2022},
-
   volume={},
-
   number={},
-
   pages={1-9},
-
   doi={10.1109/IJCNN55064.2022.9892272}}
 
 
