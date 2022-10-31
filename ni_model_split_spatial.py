@@ -21,7 +21,7 @@ import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib import interactive
 interactive(True)
-from nn_models_full import *
+from nn_models_split_spatial import *
 import numpy as np
 import os
 import hdf5storage
@@ -46,16 +46,13 @@ from my_wfpt import *
 
 # set up cuda
 
-#TODO: add cfg performance corelation metric
-#TODO: add second split
-#TODO: add last split
-#TODO: add last split
+
 
 torch.cuda.device_count()
 gpu0  = torch.device(0)
 gpu1 = torch.device(1)
-torch.cuda.set_device(gpu0)
-device = torch.device(gpu0)
+torch.cuda.set_device(gpu1)
+device = torch.device(gpu1)
 print(gpu0,gpu1)
 
 import time
@@ -110,20 +107,20 @@ EarlyStopPatience = 8
 
 ######################## tensorbaord initilization ###########################
 
-model_0 = SincDriftBoundAttChoice_full(dropout=dropout_rate).to(device)
-model = SincDriftBoundAttChoice_full(dropout=dropout_rate).to(device)
+model_0 = SincDriftBoundAttChoice_spatial(dropout=dropout_rate).to(device)
+model = SincDriftBoundAttChoice_spatial(dropout=dropout_rate).to(device)
 
-model_0 = torch.nn.DataParallel(model_0, device_ids = [0])
-model = torch.nn.DataParallel(model, device_ids = [0])
+model_0 = torch.nn.DataParallel(model_0, device_ids = [1])
+model = torch.nn.DataParallel(model, device_ids = [1])
 
 ######################## creating directory and file nmae ############for s########
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_ni_2param_onebound_classify_full_cfg' # clamp at forward
-# postname = '_ni_2param_onebound_classify_full_reglog_adam_unclamp2_noz_opt'
-postname = '_ni_2param_onebound_classify_full_reglog_clamp0'
+postname = '_ni_2param_onebound_classify_split0_reglog_clamp0'
+# postname = '_ni_2param_onebound_choice_model0'
+# postname = '_ni_2param_onebound_choice_model0'
 
-print('trying to merge optimizer')
 
 modelpath = 'trained_model' + postname
 resultpath = 'results' + postname
@@ -451,7 +448,7 @@ if createConfig:
         "weights_constrain": model.module.cutoff
     }
     config_object["Notes"] = {
-        "notes": 'this version is created when only nyquist clampping is done during forward pass, no zscore ',
+        "notes": 'this version is created when weights are clamped at forward pass of both f1 and f2',
     }
     #Write the above sections to config.ini file
     with open(modelpath + '/config.ini', 'w') as conf:
@@ -582,9 +579,9 @@ for s in range(0,4):
     # criterion = nn.BCEWithLogitsLoss()
     # criterion = nn.MSELoss()
 
-    # weight_decay = 1e-3
+    # weight_decay = 1e-4
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     # # optimize different parameters
     # alpha_param = []
@@ -606,9 +603,7 @@ for s in range(0,4):
     # optimizer_drift = torch.optim.Adam(drift_param, lr=learning_rate, weight_decay= weight_decay)
     # optimizer_alpha = torch.optim.Adam(alpha_param, lr=learning_rate,weight_decay= weight_decay)
     # optimizer_choice = torch.optim.Adam(choice_param, lr=learning_rate,weight_decay= weight_decay)
-    # # optimizer_drift = torch.optim.RMSprop(drift_param, lr=learning_rate, alpha=0.95,eps=1e-08)
-    # optimizer_alpha = torch.optim.RMSprop(alpha_param, lr=learning_rate,alpha=0.95,eps=1e-08)
-    # optimizer_choice = torch.optim.RMSprop(choice_param, lr=learning_rate,alpha=0.95,eps=1e-08)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     early_stopping = EarlyStopping(patience=EarlyStopPatience, verbose=True)
 
     ###########################################################################################
@@ -662,15 +657,11 @@ for s in range(0,4):
                 # loss = my_loss(target.cuda(), outputs.cuda(), ndt, torch.mean(outputs_alpha,axis=0).cuda())
                 # loss = my_loss(torch.abs(target.cuda()), outputs.cuda(), ndt,outputs_alpha.cuda()) -correlation_loss(outputs.cuda(),torch.abs(target.cuda()))
                 loss = my_loss(target_.cuda(), outputs.cuda(), ndt, outputs_alpha.cuda()) \
-                       + 1 * criterion(torch.squeeze(choice), torch.squeeze(choice_target))\
-                       + torch.log(outputs_alpha.cuda()).sum()\
+                       + 1 * criterion(torch.squeeze(choice), torch.squeeze(choice_target)) \
+                       + torch.log(outputs_alpha.cuda()).sum() \
                        - correlation_loss(outputs.cuda(), (target_.cuda())) \
-
-
-                # loss = my_loss(target_.cuda(), outputs.cuda(), ndt, outputs_alpha.cuda()) +  1*criterion(torch.squeeze(choice), torch.squeeze(choice_target))\
-                #               + torch.log(1*outputs_alpha.cuda()).sum()
-
-                # Backward and optimize
+ \
+                    # Backward and optimize
                 # optimizer_drift.zero_grad()
                 # optimizer_alpha.zero_grad()
                 # optimizer_choice.zero_grad()
@@ -1242,72 +1233,64 @@ for s in range(0,4):
 
     # get the filters learned from model
     cutoff = model.module.cutoff
-    _, _, filt_begin_drift0, filt_end_drift0 = getFilt(p0, 'drift', sr, cutoff=cutoff)
-    _, _, filt_begin_bound0, filt_end_bound0= getFilt(p0, 'bound', sr,cutoff=cutoff)
+    _, _, filt_begin_drift0_bound, filt_end_drift0_bound = getFilt(p0, 'drift_bound', sr, cutoff=cutoff)
     _, _, filt_begin_choice0, filt_end_choice0= getFilt(p0, 'choice', sr,cutoff=cutoff)
 
-    _, _, filt_begin_drift, filt_end_drift = getFilt(p, 'drift', sr,cutoff=cutoff)
-    _, _, filt_begin_bound, filt_end_bound = getFilt(p, 'bound', sr,cutoff=cutoff)
+    _, _, filt_begin_drift_bound, filt_end_drift_bound = getFilt(p, 'drift_bound', sr,cutoff=cutoff)
     _, _, filt_begin_choice, filt_end_choice= getFilt(p, 'choice', sr,cutoff=cutoff)
 
 
     # get the attention weights
     keys = np.load(subresultpath + '/' + 'feature_test_keys.npy')
-    attentionTs_drift = np.load(subresultpath + '/' + 'feature_test_mlp0_drift.npy')
-    attentionTs_drift_mean =  np.mean(attentionTs_drift,axis=0)
+    attentionTs_drift_bound = np.load(subresultpath + '/' + 'feature_test_mlp0_drift_bound.npy')
+    attentionTs_drift_bound_mean =  np.mean(attentionTs_drift_bound,axis=0)
 
-    attentionTs_bound = np.load(subresultpath + '/' + 'feature_test_mlp0_bound.npy')
-    attentionTs_bound_mean =  np.mean(attentionTs_bound,axis=0)
 
     attentionTs_choice = np.load(subresultpath + '/' + 'feature_test_mlp0_choice.npy')
     attentionTs_choice_mean =  np.mean(attentionTs_choice,axis=0)
 
     # visualize
+
+    drift_bound_color = 'tab:purple'
     driftcolor = 'tab:green'
     boundcolor = 'tab:red'
     choicecolor = 'tab:blue'
-    myfilters_drift = makeSincFilters(filt_begin_drift, filt_end_drift)
-    myfilters_bound = makeSincFilters(filt_begin_bound, filt_end_bound)
+    myfilters_drift_bound = makeSincFilters(filt_begin_drift_bound, filt_end_drift_bound)
     myfilters_choice = makeSincFilters(filt_begin_choice, filt_end_choice)
 
-
-    freq, P1  = plotFFT(myfilters_drift.T @ (attentionTs_drift_mean))
-    freq, P2  = plotFFT(myfilters_bound.T @ (attentionTs_bound_mean))
-    freq, P3  = plotFFT(myfilters_choice.T @ (attentionTs_choice_mean))
-
+    freq, P1  = plotFFT(myfilters_drift_bound.T @ attentionTs_drift_bound_mean)
+    freq, P2  = plotFFT(myfilters_choice.T @ attentionTs_choice_mean)
 
     fig10, ax = plt.subplots(figsize = (8,8))
-    ax.plot(freq, P1, label = 'Drift', linewidth = 6,color = driftcolor)
-    ax.plot(freq, P2,  label ='Boundary', linewidth = 6,color = boundcolor)
-    ax.plot(freq, P3,  label ='Choice',linewidth = 6, color = choicecolor)
+    ax.plot(freq, P1, label = 'Drift and Boundary', linewidth = 6,color = drift_bound_color)
+    ax.plot(freq, P2,  label ='Choice',linewidth = 6, color = choicecolor)
     ax.set_xlim(0,50)
-    ax.set_ylim(0,np.max((P1,P2,P3)) + 0.2)
-    ax.set_ylim(0,np.max((P1,P2,P3)) + 0.2)
+    ax.set_ylim(0,np.max((P1,P2)) + 0.2)
+    ax.set_ylim(0,np.max((P1,P2)) + 0.2)
     ax.set_xlabel('Frequency (Hz)')
     ax.set_ylabel('Amplitude')
     fig10.subplots_adjust(right = 0.8)
     ax.legend(bbox_to_anchor=[1.3, 1])
     fig10.savefig(figurepath + '/' + finalsubIDs[s] + 'filters_weighted_rs' + '.png')
 
-    freq, P1  = plotFFT(myfilters_drift.T @ norm(attentionTs_drift_mean))
-    freq, P2  = plotFFT(myfilters_bound.T @ norm(attentionTs_bound_mean))
-    freq, P3  = plotFFT(myfilters_choice.T @ norm(attentionTs_choice_mean))
+
+
+    freq, P1  = plotFFT(myfilters_drift_bound.T @ norm(attentionTs_drift_bound_mean))
+    freq, P2  = plotFFT(myfilters_choice.T @ norm(attentionTs_choice_mean))
 
     fig11, ax11 = plt.subplots(figsize = (8,8))
-    ax11.plot(freq, P1, label = 'Drift', linewidth = 6,color = driftcolor)
-    ax11.plot(freq, P2,  label ='Boundary', linewidth = 6,color = boundcolor)
-    ax11.plot(freq, P3,  label ='Choice',linewidth = 6, color = choicecolor)
+    ax11.plot(freq, P1, label = 'Drift and Boundary', linewidth = 6,color = drift_bound_color)
+    ax11.plot(freq, P2,  label ='Choice',linewidth = 6, color = choicecolor)
     ax11.set_xlim(0,50)
-    ax11.set_ylim(0,np.max((P1,P2,P3)) + 0.2)
-    ax11.set_ylim(0,np.max((P1,P2,P3)) + 0.2)
+    ax11.set_ylim(0,np.max((P1,P2)) + 0.2)
+    ax11.set_ylim(0,np.max((P1,P2)) + 0.2)
     ax11.set_xlabel('Frequency (Hz)')
     ax11.set_ylabel('Amplitude (Normalized)')
     fig11.subplots_adjust(right = 0.8)
     ax11.legend(bbox_to_anchor=[1.3, 1])
     fig11.savefig(figurepath + '/' + finalsubIDs[s] + 'filters_Normweighted_rs' + '.png')
 
-    plotFilterRank(filt_begin_drift0, filt_end_drift0, filt_begin_drift, filt_end_drift, attentionTs_drift_mean,color=driftcolor,branchName = 'drift')
-    plotFilterRank(filt_begin_bound0, filt_end_bound0, filt_begin_bound, filt_end_bound, attentionTs_bound_mean,color = boundcolor,branchName = 'bound')
+    plotFilterRank(filt_begin_drift0_bound, filt_end_drift0_bound, filt_begin_drift_bound, filt_end_drift_bound, attentionTs_drift_bound_mean,color=drift_bound_color,branchName = 'drift')
     plotFilterRank(filt_begin_choice0, filt_end_choice0, filt_begin_choice, filt_end_choice, attentionTs_choice_mean,color = choicecolor,branchName = 'choice')
 
 
@@ -1427,14 +1410,16 @@ for s in range(0,4):
         return
 
 
-    plotTimeSeries(timeSeries_drift, weights_drift, attentionTs_drift_mean, filt_begin_drift, filt_end_drift, 'drift',
+    plotTimeSeries(timeSeries_drift, weights_drift, attentionTs_drift_bound_mean, filt_begin_drift_bound, filt_end_drift_bound, 'drift',
                    1,driftcolor)
-    plotTimeSeries(timeSeries_bound, weights_bound, attentionTs_bound_mean, filt_begin_bound, filt_end_bound, 'bound',
+    plotTimeSeries(timeSeries_bound, weights_bound, attentionTs_drift_bound_mean, filt_begin_drift_bound, filt_end_drift_bound, 'bound',
                    1,boundcolor)
     plotTimeSeries(timeSeries_choice, weights_choice, attentionTs_choice_mean, filt_begin_choice, filt_end_choice, 'choice',
                    1,choicecolor)
 
     # LASTLY, SVD!!!
+
+
 
 # add more detaisl to the config file
 
@@ -1446,10 +1431,7 @@ if createConfig:
     config_object["loss_func"] = {
         "loss_function": "wfpt, BCEloss, log(boundary).sum(), corr(drift, rt)",
         "optimizer": optimizer,
-        # "optimizer_boundary": optimizer_alpha,
-        # "optimizer_choice": optimizer_choice
     }
     config_object["time_complexity"] = {"time":t2-t1}
     with open(modelpath + '/config.ini', 'w') as conf:
         config_object.write(conf)
-    print('create saved')

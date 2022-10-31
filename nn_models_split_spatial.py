@@ -24,7 +24,7 @@ from layers_sinc_spatial import *
 # torch.backends.cudnn.deterministic = True
 # torch.backends.cudnn.benchmark = False
 
-class SincDriftBoundAttChoice_full(nn.Module):
+class SincDriftBoundAttChoice_spatial(nn.Module):
     '''predicts drift and boundary
     attention layer after sinc and after conv
     prediction splits before sinc layer'''
@@ -48,15 +48,10 @@ class SincDriftBoundAttChoice_full(nn.Module):
     sr = 500
     cutoff = 55  # can set it to nyquist
     def __init__(self, dropout):
-        super(SincDriftBoundAttChoice_full, self).__init__()
-        self.b0_drift = nn.BatchNorm2d(1, momentum=0.99)
-        self.b0_bound = nn.BatchNorm2d(1, momentum=0.99)
-        self.b0_choice = nn.BatchNorm2d(1, momentum=0.99)
-
-
-        self.sinc_cnn2d_drift = sinc_conv(self.num_filters, self.filter_length, self.sr, cutoff=self.cutoff)
-        self.sinc_cnn2d_bound = sinc_conv(self.num_filters, self.filter_length, self.sr, cutoff=self.cutoff)
-        self.sinc_cnn2d_choice = sinc_conv(self.num_filters, self.filter_length, self.sr, cutoff=self.cutoff)
+        super(SincDriftBoundAttChoice_spatial, self).__init__()
+        self.b0 = nn.BatchNorm2d(1, momentum=0.99)
+        self.sinc_cnn2d_drift_bound = sinc_conv(self.num_filters, self.filter_length, self.sr, cutoff=self.cutoff)
+        self.sinc_cnn2d_choice = sinc_conv(self.num_filters, self.filter_length, self.sr,  cutoff=self.cutoff)
 
         self.b_drift =  nn.BatchNorm2d(self.num_filters, momentum=0.99)
         self.b_bound = nn.BatchNorm2d(self.num_filters, momentum=0.99)
@@ -96,26 +91,13 @@ class SincDriftBoundAttChoice_full(nn.Module):
 
 
         ### Fully Connected Multi-Layer Perceptron (FC-MLP)
-        self.gap0_drift = torch.nn.AdaptiveAvgPool2d(1)
-        self.mlp0_drift = torch.nn.Sequential(
+        self.gap0_drift_bound = torch.nn.AdaptiveAvgPool2d(1)
+        self.mlp0_drift_bound = torch.nn.Sequential(
             torch.nn.Linear(self.num_filters, self.num_filters // self.attentionLatent, bias=False),
             torch.nn.ReLU(inplace=True),
             torch.nn.Linear(self.num_filters // self.attentionLatent, self.num_filters, bias=False),
             torch.nn.Sigmoid()
         )
-
-
-
-
-        ### Fully Connected Multi-Layer Perceptron (FC-MLP)
-        self.gap0_bound = torch.nn.AdaptiveAvgPool2d(1)
-        self.mlp0_bound = torch.nn.Sequential(
-            torch.nn.Linear(self.num_filters, self.num_filters // self.attentionLatent, bias=False),
-            torch.nn.ReLU(inplace=True),
-            torch.nn.Linear(self.num_filters // self.attentionLatent, self.num_filters, bias=False),
-            torch.nn.Sigmoid()
-        )
-
 
 
         ### Fully Connected Multi-Layer Perceptron (FC-MLP)
@@ -136,34 +118,21 @@ class SincDriftBoundAttChoice_full(nn.Module):
     def forward(self, x):
         batch_n = x.shape[0]
         x = x.view(batch_n, 1, self.num_chan,self.t_length)
-        x_drift = self.b0_drift(x)
-        x_bound = self.b0_bound(x)
-        x_choice = self.b0_choice(x)
-        x_drift = torch.squeeze(x_drift)
-        x_bound = torch.squeeze(x_bound)
-        x_choice = torch.squeeze(x_choice)
+        x = self.b0(x)
+        x = torch.squeeze(x)
         if batch_n > 1:
             x = torch.squeeze(x)
         else:
             x = x.view(batch_n,self.num_chan,self.t_length)
-        x0_drift = self.sinc_cnn2d_drift(x_drift)
-        x0_bound = self.sinc_cnn2d_bound(x_bound)
-        x0_choice = self.sinc_cnn2d_choice(x_choice)
+        x0_drift_bound = self.sinc_cnn2d_drift_bound(x)
+        x0_choice = self.sinc_cnn2d_choice(x)
 
         # start attention
-        b_drift, c_drift, _, _ = x0_drift.size()
-        y0_drift = self.gap0_drift(x0_drift).view(b_drift, c_drift)
-        y0_drift = self.mlp0_drift(y0_drift).view(b_drift, c_drift, 1, 1)
-        score_new_drift = x0_drift * y0_drift.expand_as(x0_drift)
+        b_drift_bound, c_drift_bound, _, _ = x0_drift_bound.size()
+        y0_drift_bound = self.gap0_drift_bound(x0_drift_bound).view(b_drift_bound, c_drift_bound)
+        y0_drift_bound = self.mlp0_drift_bound(y0_drift_bound).view(b_drift_bound, c_drift_bound, 1, 1)
+        score_new_drift_bound = x0_drift_bound * y0_drift_bound.expand_as(x0_drift_bound)
         # end attention
-
-        # start attention for bound
-        b_bound, c_bound, _, _ = x0_bound.size()
-        y0_bound = self.gap0_bound(x0_bound).view(b_bound, c_bound)
-        y0_bound = self.mlp0_bound(y0_bound).view(b_bound, c_bound, 1, 1)
-        score_new_bound = x0_bound * y0_bound.expand_as(x0_bound)
-        # end attention
-
 
         # start attention for choice
         b_choice, c_choice, _, _ = x0_choice.size()
@@ -175,12 +144,12 @@ class SincDriftBoundAttChoice_full(nn.Module):
 
 
         # spatial convulation layer
-        score0_drift_ = self.b_drift(score_new_drift)
+        score0_drift_ = self.b_drift(score_new_drift_bound)
         score0_drift = self.separable_conv_drift(score0_drift_) # output is [n, 64,1,1870)
         # score0 = self.separable_conv_point(score0) # output is [n, 64,1,1870)
 
         # spatial convulation layer for bound
-        score0_bound_ = self.b_bound(score_new_bound)
+        score0_bound_ = self.b_bound(score_new_drift_bound)
         score0_bound = self.separable_conv_bound(score0_bound_)  # output is [n, 64,1,1870)
 
         # spatial convulation layer for choice

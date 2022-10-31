@@ -56,7 +56,7 @@ class sinc_conv(nn.Module):
     the trainable parameters are technically f1 and fband
     '''
 
-    def __init__(self, N_filt, Filt_dim, fs):
+    def __init__(self, N_filt, Filt_dim, fs, cutoff):
         super(sinc_conv, self).__init__()
 
 
@@ -75,9 +75,7 @@ class sinc_conv(nn.Module):
         self.N_filt = N_filt
         self.Filt_dim = Filt_dim
         self.fs = fs
-        # self.cutoff = self.fs/2
-
-        self.cutoff =  self.fs/2
+        self.cutoff =  cutoff
     def forward(self, x):
         filters = Variable(torch.zeros((self.N_filt, self.Filt_dim)))
         N = self.Filt_dim
@@ -88,10 +86,14 @@ class sinc_conv(nn.Module):
         #                             (self.cutoff) / self.freq_scale - min_band/self.freq_scale)
         # filt_end_freq = torch.clamp(filt_beg_freq + (torch.abs(self.filt_band) + min_band / self.freq_scale), \
         #                             int(min_freq+min_band)/self.freq_scale, (self.cutoff)/self.freq_scale)
-        filt_beg_freq = torch.abs(self.filt_b1) + min_freq / self.freq_scale
+        # filt_beg_freq = torch.abs(self.filt_b1) + min_freq / self.freq_scale
+
+        filt_beg_freq =  torch.clamp(torch.abs(self.filt_b1) + min_freq / self.freq_scale, min_freq / self.freq_scale, \
+                                     ((self.cutoff) - int(min_band)) / self.freq_scale)
 
         filt_end_freq = torch.clamp(filt_beg_freq + (torch.abs(self.filt_band) + min_band / self.freq_scale), \
                                     int(min_freq + min_band) / self.freq_scale, (self.cutoff) / self.freq_scale)
+
         n = torch.linspace(0, N, steps=N)
 
         # Filter window (hamming)
