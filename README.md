@@ -22,4 +22,10 @@ This github is an open-source repository for fitting Decision SincNet. Decision 
 3. in your terminal ```cd EEG-Decision-SincNet/```
 4. create an conda environment using the .yml file. ```conda env create -f environment.yml```  
    This step might take a while. 
-5.
+
+
+## Organization
+```ni_model_*.py``` are the main scripts for running specific model. 'ni' stands for Data from Neuroimage paper (Nunez et al., 2019) [link] (https://pubmed.ncbi.nlm.nih.gov/31028925/) 
+
+```nn_models_*.py``` are the neural network models 
+```layesr_sinc_spatial.py``` has Sinc Convolution Layer (modeified from [Ravanelli & Yoshua Bengio, 2018](https://arxiv.org/abs/1808.00158) and Separable Convolution Layer.
