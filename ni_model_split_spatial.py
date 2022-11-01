@@ -21,7 +21,7 @@ import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib import interactive
 interactive(True)
-from nn_models_split_spatial import *
+from nn_models_full import *
 import numpy as np
 import os
 import hdf5storage
@@ -40,8 +40,21 @@ import shutil
 from zscore_training import *
 import os
 from configparser import ConfigParser
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+import seaborn as sns
+import time
+import matplotlib.patches as mpatches
+
+# local packages
+# top level
 from topo import *
 from my_wfpt import *
+
+# local packages subdir
+from utils.get_filt import *
+from utils.sinc_fft import *
+from utils.normalize import *
+from utils.save_forward_hook import *
 
 
 # set up cuda
@@ -117,7 +130,7 @@ model = torch.nn.DataParallel(model, device_ids = [1])
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_ni_2param_onebound_classify_full_cfg' # clamp at forward
-postname = '_ni_2param_onebound_classify_split0_reglog_clamp0'
+postname = '_ni_2param_onebound_classify_split0_reglog_clamp0_lamda4'
 # postname = '_ni_2param_onebound_choice_model0'
 # postname = '_ni_2param_onebound_choice_model0'
 
@@ -579,7 +592,7 @@ for s in range(0,4):
     # criterion = nn.BCEWithLogitsLoss()
     # criterion = nn.MSELoss()
 
-    # weight_decay = 1e-4
+    weight_decay = 1e-4
 
     # optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -603,7 +616,7 @@ for s in range(0,4):
     # optimizer_drift = torch.optim.Adam(drift_param, lr=learning_rate, weight_decay= weight_decay)
     # optimizer_alpha = torch.optim.Adam(alpha_param, lr=learning_rate,weight_decay= weight_decay)
     # optimizer_choice = torch.optim.Adam(choice_param, lr=learning_rate,weight_decay= weight_decay)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay = 1e-4)
     early_stopping = EarlyStopping(patience=EarlyStopPatience, verbose=True)
 
     ###########################################################################################
@@ -924,8 +937,6 @@ for s in range(0,4):
     ax3.set_title('Spearman 'r'$\rho = %.2f$' % corr_alpha_test_rho[0])
 
     # confusion matrix
-    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-    import seaborn as sns
     cm_train = confusion_matrix(np.array(choice_targetlist_train), np.array(choice_predict_train),normalize='true')
     disp_train = ConfusionMatrixDisplay(confusion_matrix=cm_train,display_labels =('Low \nFrequency', 'High \nFrequency'))
     disp_train.plot(ax=ax4,cmap = 'Greens')
@@ -1005,7 +1016,6 @@ for s in range(0,4):
     ax5 = fig2.add_subplot(gs[1, 2])
 
 
-    import seaborn as sns
     x = ['High','Med','Low']   # low snr means hard, med snr means median, high snr means hard
     rt_train_hard = np.abs(target_train[cond_train == 0.5])
     rt_train_med = np.abs(target_train[cond_train == 1])
@@ -1050,7 +1060,6 @@ for s in range(0,4):
     ax5.set_ylabel('Boundary (test)')
 
     # manually set up legend
-    import matplotlib.patches as mpatches
 
     for a in (ax0,ax1,ax2,ax3,ax4,ax5):
         a.set_xticklabels(x)
@@ -1076,7 +1085,7 @@ for s in range(0,4):
 #%%
 
 # calculate likelihood
-    from my_wfpt import *
+
     # compare the difference between log lkelihood
     #  L (delta_tr, alpha_tr | RT_tr, ndt)
     L_train = -wfpt_vec(np.abs(train_target), -np.array(drift_train), ndt.numpy(), np.array(alpha_train))
@@ -1140,10 +1149,6 @@ for s in range(0,4):
     p0 = model_0.state_dict()
     goodchan = chansets_new()
 
-    from get_filt import *
-    from sinc_fft import *
-    from normalize import *
-
     ######### forward hook for all modules
 
     if saveForwardHook:
@@ -1155,7 +1160,6 @@ for s in range(0,4):
             # Write the above sections to config.ini file
             with open(subresultpath + '/likelihood.ini', 'w') as ll:
                 likelihood_table.write(ll)
-        from save_forward_hook import *
         def get_features(name):
             def hook(model, input, output):
                 features[name] = output.detach()

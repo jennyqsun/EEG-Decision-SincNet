@@ -40,9 +40,21 @@ import shutil
 from zscore_training import *
 import os
 from configparser import ConfigParser
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+import seaborn as sns
+import time
+import matplotlib.patches as mpatches
+
+# local packages
+# top level
 from topo import *
 from my_wfpt import *
 
+# local packages subdir
+from utils.get_filt import *
+from utils.sinc_fft import *
+from utils.normalize import *
+from utils.save_forward_hook import *
 
 # set up cuda
 
@@ -58,7 +70,7 @@ torch.cuda.set_device(gpu0)
 device = torch.device(gpu0)
 print(gpu0,gpu1)
 
-import time
+
 t1 = time.time()
 ############################# define random seeds ###########################
 
@@ -933,8 +945,6 @@ for s in range(0,4):
     ax3.set_title('Spearman 'r'$\rho = %.2f$' % corr_alpha_test_rho[0])
 
     # confusion matrix
-    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-    import seaborn as sns
     cm_train = confusion_matrix(np.array(choice_targetlist_train), np.array(choice_predict_train),normalize='true')
     disp_train = ConfusionMatrixDisplay(confusion_matrix=cm_train,display_labels =('Low \nFrequency', 'High \nFrequency'))
     disp_train.plot(ax=ax4,cmap = 'Greens')
@@ -1014,7 +1024,7 @@ for s in range(0,4):
     ax5 = fig2.add_subplot(gs[1, 2])
 
 
-    import seaborn as sns
+
     x = ['High','Med','Low']   # low snr means hard, med snr means median, high snr means hard
     rt_train_hard = np.abs(target_train[cond_train == 0.5])
     rt_train_med = np.abs(target_train[cond_train == 1])
@@ -1059,7 +1069,7 @@ for s in range(0,4):
     ax5.set_ylabel('Boundary (test)')
 
     # manually set up legend
-    import matplotlib.patches as mpatches
+
 
     for a in (ax0,ax1,ax2,ax3,ax4,ax5):
         a.set_xticklabels(x)
@@ -1085,7 +1095,7 @@ for s in range(0,4):
 #%%
 
 # calculate likelihood
-    from my_wfpt import *
+
     # compare the difference between log lkelihood
     #  L (delta_tr, alpha_tr | RT_tr, ndt)
     L_train = -wfpt_vec(np.abs(train_target), -np.array(drift_train), ndt.numpy(), np.array(alpha_train))
@@ -1149,9 +1159,6 @@ for s in range(0,4):
     p0 = model_0.state_dict()
     goodchan = chansets_new()
 
-    from get_filt import *
-    from sinc_fft import *
-    from normalize import *
 
     ######### forward hook for all modules
 
@@ -1164,7 +1171,6 @@ for s in range(0,4):
             # Write the above sections to config.ini file
             with open(subresultpath + '/likelihood.ini', 'w') as ll:
                 likelihood_table.write(ll)
-        from save_forward_hook import *
         def get_features(name):
             def hook(model, input, output):
                 features[name] = output.detach()
