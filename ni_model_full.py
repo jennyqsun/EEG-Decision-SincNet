@@ -65,8 +65,8 @@ from utils.zscore_training import *
 torch.cuda.device_count()
 gpu0  = torch.device(0)
 gpu1 = torch.device(1)
-torch.cuda.set_device(gpu0)
-device = torch.device(gpu0)
+torch.cuda.set_device(gpu1)
+device = torch.device(gpu1)
 print(gpu0,gpu1)
 
 
@@ -93,7 +93,7 @@ trialdur = timeend * 2 - timestart * 2
 
 correctModel = False  # whether the signed rt is coded as correct and incorrect
 choiceModel = True   # whether target is choice 1 and choice 2
-notrainMode = False     # if true, just load the model
+notrainMode = True     # if true, just load the model
                         # if false, train model
 
 saveForwardHook = True
@@ -124,8 +124,8 @@ EarlyStopPatience = 8
 model_0 = SincDriftBoundAttChoice_full(dropout=dropout_rate).to(device)
 model = SincDriftBoundAttChoice_full(dropout=dropout_rate).to(device)
 
-model_0 = torch.nn.DataParallel(model_0, device_ids = [0])
-model = torch.nn.DataParallel(model, device_ids = [0])
+model_0 = torch.nn.DataParallel(model_0, device_ids = [1])
+model = torch.nn.DataParallel(model, device_ids = [1])
 
 ######################## creating directory and file nmae ############for s########
 # postname = '_prestim500_1000_0123_ddm_2param'
@@ -170,6 +170,7 @@ def viz_histograms(model, epoch):
 def getIDs(path):
     allDataFiles = os.listdir(path)
     finalsub = [i[:-4] for i in allDataFiles if "high" not in i]
+    finalsub = [i for i in finalsub if "readme" not in i]
     finalsub.sort()
     return np.unique(finalsub)
 
@@ -487,7 +488,7 @@ mylist = np.arange(0, len(finalsubIDs))
 ############################################
 ############### set subject ######################
 ############################################
-for s in range(0,4):
+for s in range(0,1):
     # a results dictionary for storing all the data
     finalsubIDs = getIDs(datapath)
     # for i in range(0,1):
