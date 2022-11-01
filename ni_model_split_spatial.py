@@ -21,7 +21,7 @@ import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib import interactive
 interactive(True)
-from nn_models_full import *
+from nn_models_split_spatial import *
 import numpy as np
 import os
 import hdf5storage
@@ -168,6 +168,7 @@ def viz_histograms(model, epoch):
 def getIDs(path):
     allDataFiles = os.listdir(path)
     finalsub = [i[:-4] for i in allDataFiles if "high" not in i]
+    finalsub = [i for i in finalsub if "readme" not in i]
     finalsub.sort()
     return np.unique(finalsub)
 
