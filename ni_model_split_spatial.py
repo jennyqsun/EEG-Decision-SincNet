@@ -37,7 +37,6 @@ from matplotlib.gridspec import GridSpec
 from scipy.io import savemat
 from bipolar import hotcold
 import shutil
-from zscore_training import *
 import os
 from configparser import ConfigParser
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
@@ -55,7 +54,7 @@ from utils.get_filt import *
 from utils.sinc_fft import *
 from utils.normalize import *
 from utils.save_forward_hook import *
-
+from utils.zscore_training import *
 
 # set up cuda
 
