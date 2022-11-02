@@ -21,7 +21,7 @@ import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib import interactive
 interactive(True)
-from nn_models_split_spatial import *
+from nn_models_full import *
 import numpy as np
 import os
 import hdf5storage
@@ -37,34 +37,27 @@ from matplotlib.gridspec import GridSpec
 from scipy.io import savemat
 from bipolar import hotcold
 import shutil
+from zscore_training import *
 import os
 from configparser import ConfigParser
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-import seaborn as sns
-import time
-import matplotlib.patches as mpatches
-
-# local packages
-# top level
 from topo import *
 from my_wfpt import *
-
-# local packages subdir
-from utils.get_filt import *
-from utils.sinc_fft import *
-from utils.normalize import *
-from utils.save_forward_hook import *
-from utils.zscore_training import *
+import matplotlib.ticker as ticker
+import matplotlib.patches as patches
+from mpl_toolkits.axes_grid.inset_locator import inset_axes
 
 # set up cuda
 
-
+#TODO: add cfg performance corelation metric
+#TODO: add second split
+#TODO: add last split
+#TODO: add last split
 
 torch.cuda.device_count()
 gpu0  = torch.device(0)
 gpu1 = torch.device(1)
-torch.cuda.set_device(gpu0)
-device = torch.device(gpu0)
+torch.cuda.set_device(gpu1)
+device = torch.device(gpu1)
 print(gpu0,gpu1)
 
 import time
@@ -84,8 +77,8 @@ g = torch.Generator()
 g.manual_seed(seednum)
 
 ############################ define model parameters ######################
-timestart = 50   # 0 means starts from stimlus
-timeend = 550
+timestart = -150   # 0 means starts from stimlus
+timeend = 500
 trialdur = timeend * 2 - timestart * 2
 
 
@@ -98,13 +91,13 @@ saveForwardHook = True
 if notrainMode:
     keepTrainMode = False
     createConfig = False
-    saveForwardHook=False
 else:
     createConfig = True    # when training, create config files.
     keepTrainMode = False  # set this to be True if wants to keep training from previous model
-    zScoreData = False  # if tranining, default to save Forward Hook
+    zScoreData = False
+    saveForwardHook = True  # if tranining, default to save Forward Hook
 
-datapath = '/ssd/ni_data/exp5data/'
+datapath = '/home/jenny/sincnet_eeg/ni_data/exp5data/'
 sr = 500
 # timeend = 800 # when 300ms after stim
 
@@ -116,21 +109,19 @@ num_chan = 98
 dropout_rate = 0.7
 compute_likelihood = True
 EarlyStopPatience = 8
-weight_decay = 0
 
 ######################## tensorbaord initilization ###########################
 
-model_0 = SincDriftBoundAttChoice_spatial(dropout=dropout_rate).to(device)
-model = SincDriftBoundAttChoice_spatial(dropout=dropout_rate).to(device)
+model_0 = SincDriftBoundAttChoice_full(dropout=dropout_rate).to(device)
+model = SincDriftBoundAttChoice_full(dropout=dropout_rate).to(device)
 
-model_0 = torch.nn.DataParallel(model_0, device_ids = [0])
-model = torch.nn.DataParallel(model, device_ids = [0])
+model_0 = torch.nn.DataParallel(model_0, device_ids = [1])
+model = torch.nn.DataParallel(model, device_ids = [1])
 
 ######################## creating directory and file nmae ############for s########
 # postname = '_prestim500_1000_0123_ddm_2param'
-# postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_ni_2param_onebound_classify_full_cfg' # clamp at forward
-postname = '_ni_2param_onebound_classify_split0_reglog_clamp1'
+postname = '_ni_2param_onebound_classify_full_reglog_prestim'
 # postname = '_ni_2param_onebound_choice_model0'
 # postname = '_ni_2param_onebound_choice_model0'
 
@@ -169,7 +160,6 @@ def viz_histograms(model, epoch):
 def getIDs(path):
     allDataFiles = os.listdir(path)
     finalsub = [i[:-4] for i in allDataFiles if "high" not in i]
-    finalsub = [i for i in finalsub if "readme" not in i]
     finalsub.sort()
     return np.unique(finalsub)
 
@@ -203,8 +193,9 @@ def chansets_new():
     return chans
 
 def loadsubjdict(path, subID, filetype = '.mat'):
+    path = '/home/jenny/sincnet_eeg/ni_data/exp5data/'
     if filetype == '.mat':
-        datadict = hdf5storage.loadmat(path + subID+ '_high' + '.mat')
+        datadict = hdf5storage.loadmat(path + subID+ '_high_prestim' + '.mat')
     else:
         datadict = pickle.load(open(path + subID  +'.pkl','rb'))
     return datadict
@@ -228,11 +219,12 @@ def getrtdata(datadict, Tstart=250, Tend=1250):
     data = data[:, goodchan, :]
     spfs =datadict['spfs']
     highlow =datadict['highlow']
-    choice =np.zeros_like(correct)
+    choice = np.zeros_like(correct)
     choice[(highlow == 2) &( correct ==1)] = 1 # chose high
     choice[(highlow==1) & (correct==0)] = 1 # choce high
-    
-    
+    if Tstart < 0:
+        Tend = Tend + np.abs(Tstart)
+        Tstart = 0
     return data[Tstart:Tend, :, rtInclude], condition[rtInclude], rt[rtInclude], correct[rtInclude], choice[rtInclude]
 
 
@@ -420,7 +412,7 @@ def initialize_weights(m):
 
 class weightConstraint(object):
     def __init__(self, model):
-        self.cutoff = model.module.cutoff
+        self.cutoff = model.module.sinc_cnn2d_drift.cutoff
         self.min_freq = 1
         self.min_band = 2
         self.b1max = int(self.cutoff - self.min_freq -  self.min_band)
@@ -459,10 +451,7 @@ if createConfig:
         "batch_size": batch_size,
         "maxepoch": num_epochs,
         "seed": seednum,
-        "weights_constrain": model.module.cutoff
-    }
-    config_object["Notes"] = {
-        "notes": 'this version is created when weights are clamped at forward pass of both f1 and f2',
+        "weights_constrain": model.module.sinc_cnn2d_drift.cutoff
     }
     #Write the above sections to config.ini file
     with open(modelpath + '/config.ini', 'w') as conf:
@@ -487,7 +476,7 @@ mylist = np.arange(0, len(finalsubIDs))
 ############################################
 ############### set subject ######################
 ############################################
-for s in range(0,4):
+for s in range(0,1):
     # a results dictionary for storing all the data
     finalsubIDs = getIDs(datapath)
     # for i in range(0,1):
@@ -593,30 +582,31 @@ for s in range(0,4):
     # criterion = nn.BCEWithLogitsLoss()
     # criterion = nn.MSELoss()
 
+    weight_decay = 1e-2
 
     # optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    # # optimize different parameters
-    # alpha_param = []
-    # for n, p in model.named_parameters():
-    #     if "bound" in n:
-    #         alpha_param.append(p)
-    #
-    # drift_param = []
-    # for n, p in model.named_parameters():
-    #     if "bound" not in n and "choice" not in n:
-    #         # print(n)
-    #         drift_param.append(p)
-    #
-    # choice_param = []
-    # for n, p in model.named_parameters():
-    #     if "choice" in n:
-    #         choice_param.append(p)
-    #
-    # optimizer_drift = torch.optim.Adam(drift_param, lr=learning_rate, weight_decay= weight_decay)
-    # optimizer_alpha = torch.optim.Adam(alpha_param, lr=learning_rate,weight_decay= weight_decay)
-    # optimizer_choice = torch.optim.Adam(choice_param, lr=learning_rate,weight_decay= weight_decay)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay = weight_decay)
+    # optimize different parameters
+    alpha_param = []
+    for n, p in model.named_parameters():
+        if "bound" in n:
+            alpha_param.append(p)
+
+    drift_param = []
+    for n, p in model.named_parameters():
+        if "bound" not in n and "choice" not in n:
+            # print(n)
+            drift_param.append(p)
+
+    choice_param = []
+    for n, p in model.named_parameters():
+        if "choice" in n:
+            choice_param.append(p)
+
+    optimizer_drift = torch.optim.Adam(drift_param, lr=learning_rate)
+    optimizer_alpha = torch.optim.Adam(alpha_param, lr=learning_rate,weight_decay= weight_decay)
+    optimizer_choice = torch.optim.Adam(choice_param, lr=learning_rate)
+
     early_stopping = EarlyStopping(patience=EarlyStopPatience, verbose=True)
 
     ###########################################################################################
@@ -669,27 +659,28 @@ for s in range(0,4):
                 # loss = my_loss(target,outputs,ndt, torch.mean(outputs_alpha),torch.mean(outputs_alpha)/2,1e-29)
                 # loss = my_loss(target.cuda(), outputs.cuda(), ndt, torch.mean(outputs_alpha,axis=0).cuda())
                 # loss = my_loss(torch.abs(target.cuda()), outputs.cuda(), ndt,outputs_alpha.cuda()) -correlation_loss(outputs.cuda(),torch.abs(target.cuda()))
-                loss = my_loss(target_.cuda(), outputs.cuda(), ndt, outputs_alpha.cuda()) \
-                       + 1 * criterion(torch.squeeze(choice), torch.squeeze(choice_target)) \
-                       + torch.log(outputs_alpha.cuda()).sum() \
-                       - correlation_loss(outputs.cuda(), (target_.cuda())) \
- \
-                    # Backward and optimize
-                # optimizer_drift.zero_grad()
-                # optimizer_alpha.zero_grad()
-                # optimizer_choice.zero_grad()
-                optimizer.zero_grad()
+                # loss = my_loss(target_.cuda(), outputs.cuda(), ndt, outputs_alpha.cuda()) - correlation_loss(
+                #     outputs.cuda(), (target_.cuda())) +  1*criterion(torch.squeeze(choice), torch.squeeze(choice_target))\
+                #               + 1*outputs_alpha.cuda().sum()
+                loss = my_loss(target_.cuda(), outputs.cuda(), ndt, outputs_alpha.cuda()) +  1*criterion(torch.squeeze(choice), torch.squeeze(choice_target))\
+                              + torch.log(1*outputs_alpha.cuda()).sum()
+
+                # Backward and optimize
+                optimizer_drift.zero_grad()
+                optimizer_alpha.zero_grad()
+                optimizer_choice.zero_grad()
+                # optimizer.zero_grad()
                 loss.backward()
                 # max_grads, ave_grads, gradss, layers = plot_grad_flow(model.named_parameters())
 
-                # optimizer_drift.step()
-                # optimizer_alpha.step()
-                # optimizer_choice.step()
-                optimizer.step()
-                # clipper = weightConstraint(model=model)
-                # model.module.sinc_cnn2d_drift.apply(clipper)
-                # model.module.sinc_cnn2d_choice.apply(clipper)
-                # model.module.sinc_cnn2d_bound.apply(clipper)
+                optimizer_drift.step()
+                optimizer_alpha.step()
+                optimizer_choice.step()
+                # optimizer.step()
+                clipper = weightConstraint(model=model)
+                model.module.sinc_cnn2d_drift.apply(clipper)
+                model.module.sinc_cnn2d_choice.apply(clipper)
+                model.module.sinc_cnn2d_bound.apply(clipper)
                 epoch_loss.append(loss.detach().cpu().numpy())
 
                 print(f'Epoch [{epoch + 1}/{num_epochs}], Step [{i + 1}/{n_total_steps}], Loss: {loss.item():.4f}')
@@ -756,10 +747,10 @@ for s in range(0,4):
         choice_targetlist_test.extend(choice_test_target.tolist())
         #     # test_data, test_target = next(iter(test_loader))
         with torch.no_grad():
-            # clipper = weightConstraint(model=model)
-            # model.module.sinc_cnn2d_drift.apply(clipper)
-            # model.module.sinc_cnn2d_choice.apply(clipper)
-            # model.module.sinc_cnn2d_bound.apply(clipper)
+            clipper = weightConstraint(model=model)
+            model.module.sinc_cnn2d_drift.apply(clipper)
+            model.module.sinc_cnn2d_choice.apply(clipper)
+            model.module.sinc_cnn2d_bound.apply(clipper)
             pred, pred_1,choice_test= model(test_data.cuda())
         choice_predict_test.extend(np.squeeze((choice_test).detach().cpu().round().numpy()).tolist())
         pred_1_copy = pred_1.detach().cpu()
@@ -841,10 +832,10 @@ for s in range(0,4):
         # device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
         # Forward pass
         with torch.no_grad():
-            # clipper = weightConstraint(model=model)
-            # model.module.sinc_cnn2d_drift.apply(clipper)
-            # model.module.sinc_cnn2d_choice.apply(clipper)
-            # model.module.sinc_cnn2d_bound.apply(clipper)
+            clipper = weightConstraint(model=model)
+            model.module.sinc_cnn2d_drift.apply(clipper)
+            model.module.sinc_cnn2d_choice.apply(clipper)
+            model.module.sinc_cnn2d_bound.apply(clipper)
             outputs, outputs_1,choice_train = model(data.cuda())
         choice_predict_train.extend(np.squeeze(choice_train.detach().cpu().round().numpy()).tolist())
 
@@ -937,6 +928,8 @@ for s in range(0,4):
     ax3.set_title('Spearman 'r'$\rho = %.2f$' % corr_alpha_test_rho[0])
 
     # confusion matrix
+    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+    import seaborn as sns
     cm_train = confusion_matrix(np.array(choice_targetlist_train), np.array(choice_predict_train),normalize='true')
     disp_train = ConfusionMatrixDisplay(confusion_matrix=cm_train,display_labels =('Low \nFrequency', 'High \nFrequency'))
     disp_train.plot(ax=ax4,cmap = 'Greens')
@@ -1016,6 +1009,7 @@ for s in range(0,4):
     ax5 = fig2.add_subplot(gs[1, 2])
 
 
+    import seaborn as sns
     x = ['High','Med','Low']   # low snr means hard, med snr means median, high snr means hard
     rt_train_hard = np.abs(target_train[cond_train == 0.5])
     rt_train_med = np.abs(target_train[cond_train == 1])
@@ -1060,6 +1054,7 @@ for s in range(0,4):
     ax5.set_ylabel('Boundary (test)')
 
     # manually set up legend
+    import matplotlib.patches as mpatches
 
     for a in (ax0,ax1,ax2,ax3,ax4,ax5):
         a.set_xticklabels(x)
@@ -1085,7 +1080,7 @@ for s in range(0,4):
 #%%
 
 # calculate likelihood
-
+    from my_wfpt import *
     # compare the difference between log lkelihood
     #  L (delta_tr, alpha_tr | RT_tr, ndt)
     L_train = -wfpt_vec(np.abs(train_target), -np.array(drift_train), ndt.numpy(), np.array(alpha_train))
@@ -1149,6 +1144,9 @@ for s in range(0,4):
     p0 = model_0.state_dict()
     goodchan = chansets_new()
 
+    from get_filt import *
+    from sinc_fft import *
+
     ######### forward hook for all modules
 
     if saveForwardHook:
@@ -1160,6 +1158,7 @@ for s in range(0,4):
             # Write the above sections to config.ini file
             with open(subresultpath + '/likelihood.ini', 'w') as ll:
                 likelihood_table.write(ll)
+        from save_forward_hook import *
         def get_features(name):
             def hook(model, input, output):
                 features[name] = output.detach()
@@ -1183,25 +1182,33 @@ for s in range(0,4):
             print(idx)
         saveForwardHookTest(FEAT, TARGET, subresultpath)
 
-        # ## save train features ##
-        # FEAT = {}
-        # TARGET = []
-        # features = {}
-        # for idx, (inputs, target) in enumerate(train_loader):
-        #     inputs = inputs.to(device)
-        #     TARGET.extend(target.numpy())
-        #     drift, bound, choice = model(inputs)
-        #     for key in features:
-        #         if idx == 0:
-        #             FEAT[key] = []
-        #         FEAT[key].extend(features[key].cpu().numpy())
-        #     print(idx)
-        # saveForwardHookTrain(FEAT, TARGET, subresultpath)
+        ## save train features ##
+        FEAT = {}
+        TARGET = []
+        features = {}
+        for idx, (inputs, target) in enumerate(train_loader):
+            inputs = inputs.to(device)
+            TARGET.extend(target.numpy())
+            drift, bound, choice = model(inputs)
+            for key in features:
+                if idx == 0:
+                    FEAT[key] = []
+                FEAT[key].extend(features[key].cpu().numpy())
+            print(idx)
+        saveForwardHookTrain(FEAT, TARGET, subresultpath)
 
 
 
     ################# visualize filters ###############################
 
+    def norm(vec):
+        f_min, f_max = np.min(vec), np.max(vec)
+        newV =  2* (vec - f_min) / (f_max - f_min) -1
+        return newV
+    def normZeroOne(vec):
+        f_min, f_max = np.min(vec), np.max(vec)
+        newV =  (vec - f_min) / (f_max - f_min)
+        return newV
 
     def plotFilterRank(filt_beg_freq0,filt_end_freq0, filt_beg_freq, filt_end_freq, attentionTs_mean, color,branchName):
         fig5, ax5_ = plt.subplots(1, figsize=(5, 5.5))
@@ -1236,65 +1243,52 @@ for s in range(0,4):
 
 
     # get the filters learned from model
-    cutoff = model.module.cutoff
-    _, _, filt_begin_drift0_bound, filt_end_drift0_bound = getFilt(p0, 'drift_bound', sr, cutoff=cutoff)
-    _, _, filt_begin_choice0, filt_end_choice0= getFilt(p0, 'choice', sr,cutoff=cutoff)
+    _, _, filt_begin_drift0, filt_end_drift0 = getFilt(p0, 'drift', sr)
+    _, _, filt_begin_bound0, filt_end_bound0= getFilt(p0, 'bound', sr)
+    _, _, filt_begin_choice0, filt_end_choice0= getFilt(p0, 'choice', sr)
 
-    _, _, filt_begin_drift_bound, filt_end_drift_bound = getFilt(p, 'drift_bound', sr,cutoff=cutoff)
-    _, _, filt_begin_choice, filt_end_choice= getFilt(p, 'choice', sr,cutoff=cutoff)
+    _, _, filt_begin_drift, filt_end_drift = getFilt(p, 'drift', sr)
+    _, _, filt_begin_bound, filt_end_bound = getFilt(p, 'bound', sr)
+    _, _, filt_begin_choice, filt_end_choice= getFilt(p, 'choice', sr)
 
 
     # get the attention weights
     keys = np.load(subresultpath + '/' + 'feature_test_keys.npy')
-    attentionTs_drift_bound = np.load(subresultpath + '/' + 'feature_test_mlp0_drift_bound.npy')
-    attentionTs_drift_bound_mean =  np.mean(attentionTs_drift_bound,axis=0)
+    attentionTs_drift = np.load(subresultpath + '/' + 'feature_test_mlp0_drift.npy')
+    attentionTs_drift_mean =  np.mean(attentionTs_drift,axis=0)
 
+    attentionTs_bound = np.load(subresultpath + '/' + 'feature_test_mlp0_bound.npy')
+    attentionTs_bound_mean =  np.mean(attentionTs_bound,axis=0)
 
     attentionTs_choice = np.load(subresultpath + '/' + 'feature_test_mlp0_choice.npy')
     attentionTs_choice_mean =  np.mean(attentionTs_choice,axis=0)
 
     # visualize
-
-    drift_bound_color = 'tab:purple'
     driftcolor = 'tab:green'
     boundcolor = 'tab:red'
     choicecolor = 'tab:blue'
-    myfilters_drift_bound = makeSincFilters(filt_begin_drift_bound, filt_end_drift_bound)
+    myfilters_drift = makeSincFilters(filt_begin_drift, filt_end_drift)
+    myfilters_bound = makeSincFilters(filt_begin_bound, filt_end_bound)
     myfilters_choice = makeSincFilters(filt_begin_choice, filt_end_choice)
 
-    freq, P1  = plotFFT(myfilters_drift_bound.T @ attentionTs_drift_bound_mean)
-    freq, P2  = plotFFT(myfilters_choice.T @ attentionTs_choice_mean)
+    freq, P1  = plotFFT(myfilters_drift.T @ attentionTs_drift_mean)
+    freq, P2  = plotFFT(myfilters_bound.T @ attentionTs_bound_mean)
+    freq, P3  = plotFFT(myfilters_choice.T @ attentionTs_choice_mean)
 
     fig10, ax = plt.subplots(figsize = (8,8))
-    ax.plot(freq, P1, label = 'Drift and Boundary', linewidth = 6,color = drift_bound_color)
-    ax.plot(freq, P2,  label ='Choice',linewidth = 6, color = choicecolor)
+    ax.plot(freq, P1, label = 'Drift', linewidth = 6,color = driftcolor)
+    ax.plot(freq, P2,  label ='Boundary', linewidth = 6,color = boundcolor)
+    ax.plot(freq, P3,  label ='Choice',linewidth = 6, color = choicecolor)
     ax.set_xlim(0,50)
-    ax.set_ylim(0,np.max((P1,P2)) + 0.2)
-    ax.set_ylim(0,np.max((P1,P2)) + 0.2)
+    ax.set_ylim(0,np.max((P1,P2,P3)) + 0.2)
     ax.set_xlabel('Frequency (Hz)')
     ax.set_ylabel('Amplitude')
     fig10.subplots_adjust(right = 0.8)
     ax.legend(bbox_to_anchor=[1.3, 1])
     fig10.savefig(figurepath + '/' + finalsubIDs[s] + 'filters_weighted_rs' + '.png')
 
-
-
-    freq, P1  = plotFFT(myfilters_drift_bound.T @ norm(attentionTs_drift_bound_mean))
-    freq, P2  = plotFFT(myfilters_choice.T @ norm(attentionTs_choice_mean))
-
-    fig11, ax11 = plt.subplots(figsize = (8,8))
-    ax11.plot(freq, P1, label = 'Drift and Boundary', linewidth = 6,color = drift_bound_color)
-    ax11.plot(freq, P2,  label ='Choice',linewidth = 6, color = choicecolor)
-    ax11.set_xlim(0,50)
-    ax11.set_ylim(0,np.max((P1,P2)) + 0.2)
-    ax11.set_ylim(0,np.max((P1,P2)) + 0.2)
-    ax11.set_xlabel('Frequency (Hz)')
-    ax11.set_ylabel('Amplitude (Normalized)')
-    fig11.subplots_adjust(right = 0.8)
-    ax11.legend(bbox_to_anchor=[1.3, 1])
-    fig11.savefig(figurepath + '/' + finalsubIDs[s] + 'filters_Normweighted_rs' + '.png')
-
-    plotFilterRank(filt_begin_drift0_bound, filt_end_drift0_bound, filt_begin_drift_bound, filt_end_drift_bound, attentionTs_drift_bound_mean,color=drift_bound_color,branchName = 'drift')
+    plotFilterRank(filt_begin_drift0, filt_end_drift0, filt_begin_drift, filt_end_drift, attentionTs_drift_mean,color=driftcolor,branchName = 'drift')
+    plotFilterRank(filt_begin_bound0, filt_end_bound0, filt_begin_bound, filt_end_bound, attentionTs_bound_mean,color = boundcolor,branchName = 'bound')
     plotFilterRank(filt_begin_choice0, filt_end_choice0, filt_begin_choice, filt_end_choice, attentionTs_choice_mean,color = choicecolor,branchName = 'choice')
 
 
@@ -1389,7 +1383,7 @@ for s in range(0,4):
                 fig15.colorbar(plt.cm.ScalarMappable(norm=mynorm, cmap=cmap),  ax=cb_ax)
 
                 j.set_title('Weights')
-            xVec =np.linspace(0,1000,timeSeries_drift.shape[-1])
+            xVec =np.linspace(0,trialdur,timeSeries_drift.shape[-1])
 
             for w, j in enumerate(axl[:int(len(axl)/2)]):
                 amp = topoTs_mean_freq
@@ -1399,7 +1393,7 @@ for s in range(0,4):
             for a, j in enumerate(axl[:int(len(axl)/2)]):
                 j.set_xlabel('Times (ms)')
                 j.set_ylabel('Amplitude (Normalized)')
-                j.axvline(np.median(np.abs(test_target)) * 1000, label = 'median RT',linewidth = 4, alpha=0.8,\
+                j.axvline(np.median(np.abs(test_target)) * trialdur, label = 'median RT',linewidth = 4, alpha=0.8,\
                           color = 'tab:purple')
                 if a ==0 :
                     j.legend()
@@ -1414,9 +1408,9 @@ for s in range(0,4):
         return
 
 
-    plotTimeSeries(timeSeries_drift, weights_drift, attentionTs_drift_bound_mean, filt_begin_drift_bound, filt_end_drift_bound, 'drift',
+    plotTimeSeries(timeSeries_drift, weights_drift, attentionTs_drift_mean, filt_begin_drift, filt_end_drift, 'drift',
                    1,driftcolor)
-    plotTimeSeries(timeSeries_bound, weights_bound, attentionTs_drift_bound_mean, filt_begin_drift_bound, filt_end_drift_bound, 'bound',
+    plotTimeSeries(timeSeries_bound, weights_bound, attentionTs_bound_mean, filt_begin_bound, filt_end_bound, 'bound',
                    1,boundcolor)
     plotTimeSeries(timeSeries_choice, weights_choice, attentionTs_choice_mean, filt_begin_choice, filt_end_choice, 'choice',
                    1,choicecolor)
@@ -1433,9 +1427,13 @@ print(t2-t1)
 if createConfig:
     config_object.read(modelpath + '/config.ini')
     config_object["loss_func"] = {
-        "loss_function": "wfpt, BCEloss, log(boundary).sum(), corr(drift, rt)",
-        "optimizer": optimizer,
+        "loss_function": "wfpt, BCEloss, log(boundary).sum()",
+        "optimizer_drift": optimizer_drift,
+        "optimizer_boundary": optimizer_alpha,
+        "optimizer_choice": optimizer_choice
     }
-    config_object["time_complexity"] = {"time":t2-t1}
+    config_object["time_complexity"] = {
+        "time":t2-t1
+    }
     with open(modelpath + '/config.ini', 'w') as conf:
         config_object.write(conf)

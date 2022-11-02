@@ -86,14 +86,14 @@ g = torch.Generator()
 g.manual_seed(seednum)
 
 ############################ define model parameters ######################
-timestart = 0   # 0 means starts from stimlus
-timeend = 500
+timestart = 50   # 50 means starts from stimlus
+timeend = 550
 trialdur = timeend * 2 - timestart * 2
 
 
 correctModel = False  # whether the signed rt is coded as correct and incorrect
 choiceModel = True   # whether target is choice 1 and choice 2
-notrainMode = True     # if true, just load the model
+notrainMode = False     # if true, just load the model
                         # if false, train model
 
 saveForwardHook = True
@@ -118,6 +118,7 @@ num_chan = 98
 dropout_rate = 0.7
 compute_likelihood = True
 EarlyStopPatience = 8
+weight_decay = 0
 
 ######################## tensorbaord initilization ###########################
 
@@ -132,7 +133,7 @@ model = torch.nn.DataParallel(model, device_ids = [1])
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_ni_2param_onebound_classify_full_cfg' # clamp at forward
 # postname = '_ni_2param_onebound_classify_full_reglog_adam_unclamp2_noz_opt'
-postname = '_ni_2param_onebound_classify_full_reglog_clamp0'
+postname = '_ni_2param_onebound_classify_full_reglog_clamp1'
 
 print('trying to merge optimizer')
 
@@ -488,7 +489,7 @@ mylist = np.arange(0, len(finalsubIDs))
 ############################################
 ############### set subject ######################
 ############################################
-for s in range(0,1):
+for s in range(0,4):
     # a results dictionary for storing all the data
     finalsubIDs = getIDs(datapath)
     # for i in range(0,1):
@@ -594,9 +595,9 @@ for s in range(0,1):
     # criterion = nn.BCEWithLogitsLoss()
     # criterion = nn.MSELoss()
 
-    # weight_decay = 1e-3
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     # # optimize different parameters
     # alpha_param = []
