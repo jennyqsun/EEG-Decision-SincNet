@@ -30,8 +30,7 @@ This github is an open-source repository for fitting Decision SincNet. Decision 
 ```nn_models_*.py``` are the neural network models   
 ```layesr_sinc_spatial.py``` has Sinc Convolution Layer (modeified from [Ravanelli & Yoshua Bengio, 2018](https://arxiv.org/abs/1808.00158) and Separable Convolution Layer.
 
-
-```\hilbert_models``` is a directory where I replaced the Relu layer with Hilbert transform (PyTorch has differentiable FFT). The model is still being developed though. 
+```\hilbert_models``` is a directory where I replaced the Relu layer with Hilbert transform (PyTorch has differentiable FFT). The model is still being developed, so it is a sandbox. 
 
 ```\test``` is a directory where I use jupyter notebooks to demonstrate certain portions of the model. For example, the test_sinc_filters.ipynb is   
 is demonstrating the Sinc filters, hamming windows, bandwidth and its FFT.
