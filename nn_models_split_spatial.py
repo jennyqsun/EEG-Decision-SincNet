@@ -33,8 +33,8 @@ class SincDriftBoundAttChoice_spatial(nn.Module):
     num_filters = 32
     filter_length = 131
     t_length = 500
-    pool_window_ms =250   # set the pool window in time unit
-    stride_window_ms = 100   # set the stride window in time unit
+    pool_window_ms =150   # set the pool window in time unit
+    stride_window_ms = 50   # set the stride window in time unit
     pool_window = int(np.rint(((t_length- filter_length +1) * pool_window_ms)/ (1000)))
     stride_window =  int(np.rint(((t_length- filter_length +1) * stride_window_ms)/ (1000)))
     if pool_window % 2 == 0 :
@@ -46,7 +46,7 @@ class SincDriftBoundAttChoice_spatial(nn.Module):
     spatialConvDepth = 1
     attentionLatent = 6
     sr = 500
-    cutoff = 55  # can set it to nyquist
+    cutoff = sr/2  # can set it to nyquist
     def __init__(self, dropout):
         super(SincDriftBoundAttChoice_spatial, self).__init__()
         self.b0 = nn.BatchNorm2d(1, momentum=0.99)
@@ -192,8 +192,8 @@ class SincDriftBoundAttChoice_spatial(nn.Module):
 
         # ouput layer for bound
         score2_bound =score_bound.view(-1,self.num_filters*self.spatialConvDepth*self.output_size)
-        score4_bound = F.softplus(self.fc_bound(score2_bound))
-
+        # score4_bound = F.softplus(self.fc_bound(score2_bound))
+        score4_bound = torch.exp(F.sigmoid(self.fc_bound(score2_bound)))
         return score3_drift,score4_bound,score3_choice
 
     def get_activations_gradient_filter(self):
