@@ -84,8 +84,8 @@ g = torch.Generator()
 g.manual_seed(seednum)
 
 ############################ define model parameters ######################
-timestart = 50   # 0 means starts from stimlus
-timeend = 550
+timestart = 0   # 0 means starts from stimlus
+timeend = 500
 trialdur = timeend * 2 - timestart * 2
 
 
@@ -130,7 +130,7 @@ model = torch.nn.DataParallel(model, device_ids = [0])
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_prestim500_1000_0123_ddm_2param'
 # postname = '_ni_2param_onebound_classify_full_cfg' # clamp at forward
-postname = '_ni_2param_onebound_classify_split0_reglog_clamp1'
+postname = '_ni_2param_onebound_classify_split0_noreg_original'
 # postname = '_ni_2param_onebound_choice_model0'
 # postname = '_ni_2param_onebound_choice_model0'
 
@@ -218,7 +218,6 @@ def getrtdata(datadict, Tstart=250, Tend=1250):
     # goodtrials = np.array(datadict['trials'])[0]
     correct = np.array(datadict['acc'])
     rt = np.array(datadict['rt'])
-
     rtInclude = np.abs(rt) >=300
     # goodchan = goodchans()
     # goodchan = chanmotor()
@@ -226,14 +225,26 @@ def getrtdata(datadict, Tstart=250, Tend=1250):
     # data = data[:, :, correct==1]
     # condition = condition[correct==1]
     data = data[:, goodchan, :]
+    # remove mean
+
+    data = data[Tstart:Tend, :, rtInclude]
+    nTrial = data.shape[2]
+    chanMean  = np.mean(data, axis=0)
+    data_mean = np.zeros_like(data)
+
+    data_mean = np.zeros_like(data)
+    for trial in range(nTrial):
+        chanMeanTrial = np.tile(chanMean[:,trial], (len(data),1))
+        data_mean[:,:,trial] =data[:,:,trial] -chanMeanTrial
+
+
     spfs =datadict['spfs']
     highlow =datadict['highlow']
     choice =np.zeros_like(correct)
     choice[(highlow == 2) &( correct ==1)] = 1 # chose high
     choice[(highlow==1) & (correct==0)] = 1 # choce high
-    
-    
-    return data[Tstart:Tend, :, rtInclude], condition[rtInclude], rt[rtInclude], correct[rtInclude], choice[rtInclude]
+
+    return data_mean, condition[rtInclude], rt[rtInclude], correct[rtInclude], choice[rtInclude]
 
 
 def reshapedata(data):
@@ -669,11 +680,11 @@ for s in range(0,4):
                 # loss = my_loss(target,outputs,ndt, torch.mean(outputs_alpha),torch.mean(outputs_alpha)/2,1e-29)
                 # loss = my_loss(target.cuda(), outputs.cuda(), ndt, torch.mean(outputs_alpha,axis=0).cuda())
                 # loss = my_loss(torch.abs(target.cuda()), outputs.cuda(), ndt,outputs_alpha.cuda()) -correlation_loss(outputs.cuda(),torch.abs(target.cuda()))
-                loss = my_loss(target_.cuda(), outputs.cuda(), ndt, outputs_alpha.cuda()) \
-                       + 1 * criterion(torch.squeeze(choice), torch.squeeze(choice_target)) \
-                       + torch.log(outputs_alpha.cuda()).sum() \
-                       - correlation_loss(outputs.cuda(), (target_.cuda())) \
- \
+                loss = my_loss(target_.cuda(), outputs.cuda(), ndt, outputs_alpha.mean().cuda()) \
+                       + 1 * criterion(torch.squeeze(choice), torch.squeeze(choice_target))
+                       # + torch.log(outputs_alpha.cuda()).sum() \
+                       # - correlation_loss(outputs.cuda(), (target_.cuda())) \
+
                     # Backward and optimize
                 # optimizer_drift.zero_grad()
                 # optimizer_alpha.zero_grad()
@@ -1268,7 +1279,7 @@ for s in range(0,4):
     fig10, ax = plt.subplots(figsize = (8,8))
     ax.plot(freq, P1, label = 'Drift and Boundary', linewidth = 6,color = drift_bound_color)
     ax.plot(freq, P2,  label ='Choice',linewidth = 6, color = choicecolor)
-    ax.set_xlim(0,50)
+    ax.set_xlim(0,cutoff+5)
     ax.set_ylim(0,np.max((P1,P2)) + 0.2)
     ax.set_ylim(0,np.max((P1,P2)) + 0.2)
     ax.set_xlabel('Frequency (Hz)')
@@ -1285,7 +1296,7 @@ for s in range(0,4):
     fig11, ax11 = plt.subplots(figsize = (8,8))
     ax11.plot(freq, P1, label = 'Drift and Boundary', linewidth = 6,color = drift_bound_color)
     ax11.plot(freq, P2,  label ='Choice',linewidth = 6, color = choicecolor)
-    ax11.set_xlim(0,50)
+    ax11.set_xlim(0,cutoff+5)
     ax11.set_ylim(0,np.max((P1,P2)) + 0.2)
     ax11.set_ylim(0,np.max((P1,P2)) + 0.2)
     ax11.set_xlabel('Frequency (Hz)')
